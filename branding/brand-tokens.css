@@ -1,0 +1,50 @@
+/* ============================================================
+   Reckitt brand tokens — drop-in CSS custom properties
+   Extracted/sampled from the "Focus On Digital Science" deck.
+   Import this file (or copy the block) into any future app.
+   These are the same values styles.css uses in DONNA.
+   ============================================================ */
+
+:root{
+  /* primary palette */
+  --rk-pink:    #E4007C;
+  --rk-magenta: #FF0080;
+  --rk-coral:   #FF4F58;
+  --rk-orange:  #FF8A3C;
+  --rk-grad: linear-gradient(120deg, var(--rk-pink) 0%, var(--rk-coral) 55%, var(--rk-orange) 100%);
+
+  /* neutrals */
+  --rk-ink:       #3E4C5E;
+  --rk-ink-soft:  #71808F;
+  --rk-ink-faint: #9AA7B3;
+  --rk-canvas:    #EFF2F5;
+  --rk-card:      #FFFFFF;
+  --rk-line:      #E3E8EE;
+
+  /* secondary accents (charts / status) */
+  --rk-teal:   #00A3A1;
+  --rk-purple: #6C2D82;
+  --rk-sky:    #4FB3E8;
+  --rk-green:  #5BA821;
+  --rk-amber:  #F2A93B;
+  --rk-red:    #E4453A;
+
+  /* shape & depth */
+  --rk-radius-lg: 18px;
+  --rk-radius-md: 12px;
+  --rk-shadow: 0 6px 18px rgba(62,76,94,.08);
+
+  /* type (demo stand-ins — see brand.json typography note) */
+  --rk-display: "Oswald", "Arial Narrow", sans-serif;   /* condensed, uppercase */
+  --rk-body:    "Poppins", "Segoe UI", sans-serif;
+}
+
+/* Signature devices from the deck */
+.rk-eyebrow-tick{          /* angled cut before uppercase eyebrow labels */
+  display:inline-block; width:18px; height:3px;
+  background:var(--rk-grad); transform:skewX(-30deg);
+}
+.rk-gradient-text{
+  background:var(--rk-grad);
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}

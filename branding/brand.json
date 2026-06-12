@@ -1,0 +1,73 @@
+{
+  "brand": "Reckitt",
+  "source": "Focus On Digital Science investor deck PDF (May 2026) — colours sampled from rendered pages, logo extracted from closing slide (p48)",
+  "usage": "Branding reference only — not business data. For internal demo/client work on the DONNA app.",
+  "colors": {
+    "primary": {
+      "reckittPink":   "#E4007C",
+      "brightMagenta": "#FF0080",
+      "coral":         "#FF4F58",
+      "orange":        "#FF8A3C"
+    },
+    "gradient": {
+      "css": "linear-gradient(120deg, #E4007C 0%, #FF4F58 55%, #FF8A3C 100%)",
+      "sampledStops": {
+        "coverTopLeft": "#E50B7B",
+        "coverBottomLeft": "#C61973",
+        "centre": "#FF0080",
+        "coverTopRight": "#FE5140",
+        "coverBottomRight": "#FD2564"
+      },
+      "note": "The deck uses a diagonal magenta→coral→orange sweep; exact stops vary slide to slide. The css value above is the harmonised version used across the DONNA UI."
+    },
+    "neutrals": {
+      "slateInk":  "#3E4C5E",
+      "inkSoft":   "#71808F",
+      "inkFaint":  "#9AA7B3",
+      "canvas":    "#EFF2F5",
+      "card":      "#FFFFFF",
+      "line":      "#E3E8EE"
+    },
+    "secondaryAccents": {
+      "teal":   "#00A3A1",
+      "purple": "#6C2D82",
+      "sky":    "#4FB3E8",
+      "green":  "#5BA821",
+      "amber":  "#F2A93B",
+      "red":    "#E4453A",
+      "note": "Lifted from the product-lifecycle ring and icon accents in the deck — used for charts and status."
+    }
+  },
+  "typography": {
+    "display": {
+      "family": "Oswald",
+      "fallback": "'Arial Narrow', sans-serif",
+      "treatment": "Condensed, uppercase, 500–700 weight — stand-in for the deck's condensed display face",
+      "note": "Reckitt's actual corporate typefaces are licensed and not embedded extractably in the PDF. Oswald (Google Fonts) is the closest freely available match for demo use; swap for the licensed face before anything client-facing beyond demo."
+    },
+    "body": {
+      "family": "Poppins",
+      "fallback": "'Segoe UI', sans-serif",
+      "treatment": "400–600, sentence case, geometric humanist — matches the deck's rounded body style"
+    }
+  },
+  "components": {
+    "cardRadius": "18px",
+    "cardShadow": "0 6px 18px rgba(62,76,94,.08)",
+    "eyebrowDevice": "Short skewed gradient tick (skewX -30°) before uppercase eyebrow labels — mirrors the deck's angled header cut",
+    "kpiStyle": "Oversized condensed numerals with gradient or slate fill, small uppercase label above"
+  },
+  "logos": {
+    "folder": "logos/",
+    "files": {
+      "reckitt-logo-white.png":  "Full lockup (mark + wordmark), white, transparent — for gradient/dark surfaces",
+      "reckitt-logo-pink.png":   "Full lockup, Reckitt pink #E4007C, transparent — for white/light surfaces",
+      "reckitt-logo-slate.png":  "Full lockup, slate ink, transparent — for muted/footer use",
+      "reckitt-logomark-white.png": "Spiral mark only, white",
+      "reckitt-logomark-pink.png":  "Spiral mark only, pink — used in the DONNA topbar",
+      "reckitt-logomark-slate.png": "Spiral mark only, slate",
+      "reckitt-logo-on-gradient.png": "Original extraction reference from the deck closing slide"
+    },
+    "provenance": "Rasterised at 400dpi from p48 of the PDF and alpha-masked; ~1250px wide. For print or large-format, request the vector originals from Reckitt brand team."
+  }
+}
