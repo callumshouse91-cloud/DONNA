@@ -3,7 +3,24 @@
    Period: Jan – May 2026 · Reporting month: May 2026
    ============================================================ */
 
-const DATA = {
+let DATA_SOURCE = "excel"; // "excel" | "smartsheet"
+
+const SOURCE_META = {
+  excel: {
+    label: "Excel export",
+    connector: "Manual upload",
+    sync: "Last refreshed manually",
+    status: "current",
+  },
+  smartsheet: {
+    label: "Smartsheet API",
+    connector: "Live sync",
+    sync: "Auto-synced",
+    status: "planned",
+  },
+};
+
+const _DATA = {
   months: ["Jan", "Feb", "Mar", "Apr", "May"],
 
   tsa: {
@@ -185,3 +202,25 @@ Two data-quality exceptions require action: one onboarding/asset mismatch (lapto
     ],
   },
 };
+
+/** Single accessor — UI reads through here; upstream connector is swappable. */
+function getData() {
+  return _DATA;
+}
+
+function getSourceMeta(source = DATA_SOURCE) {
+  return SOURCE_META[source];
+}
+
+let _onDataSourceChange = null;
+
+function onDataSourceChange(fn) {
+  _onDataSourceChange = fn;
+}
+
+function setDataSource(source) {
+  if (source !== "excel" && source !== "smartsheet") return;
+  if (source === DATA_SOURCE) return;
+  DATA_SOURCE = source;
+  if (typeof _onDataSourceChange === "function") _onDataSourceChange(source);
+}

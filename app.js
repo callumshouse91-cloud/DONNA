@@ -2,8 +2,14 @@
    DONNA · TSA Run & Control — app shell + views
    ============================================================ */
 
+const DATA = new Proxy({}, {
+  get(_, key) { return getData()[key]; },
+});
+
 const gbp = n => "£" + Math.abs(n).toLocaleString("en-GB") + (n < 0 ? " cr" : "");
 const num = n => n.toLocaleString("en-GB");
+
+let currentTab = "overview";
 
 /* ---------------- icons (inline, feather-style) ---------------- */
 const I = {
@@ -45,11 +51,35 @@ TABS.forEach(t => {
   nav.appendChild(b);
 });
 
-function setTab(id) {
+function setTab(id, opts = {}) {
+  currentTab = id;
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
+  document.querySelectorAll(".nav-item .pill").forEach(p => {
+    const tab = TABS.find(t => t.id === p.closest(".nav-item")?.dataset.tab);
+    if (tab?.pill) p.textContent = tab.pill();
+  });
   document.getElementById("view").innerHTML = VIEWS[id]();
-  if (id === "arch") wireArchitecture();
-  window.scrollTo({ top: 0 });
+  if (id === "arch") wireArchitecture(opts.restartFlows);
+  if (!opts.silent) window.scrollTo({ top: 0 });
+}
+
+function updateSourceUI() {
+  const meta = getSourceMeta();
+  document.querySelectorAll(".source-seg").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.source === DATA_SOURCE);
+  });
+  const status = document.getElementById("connectorStatus");
+  if (status) {
+    status.innerHTML = `Source: <b>${meta.label}</b> · ${meta.connector}`;
+  }
+}
+
+function restartFlowAnimation() {
+  document.querySelectorAll(".flow").forEach(p => {
+    p.style.animation = "none";
+    void p.getBBox();
+    p.style.animation = "";
+  });
 }
 
 /* ---------------- shared fragments ---------------- */
@@ -486,12 +516,18 @@ const VIEWS = {
 };
 
 /* ---------------- architecture diagram ---------------- */
-function wireArchitecture() {
+function wireArchitecture(restartFlows = false) {
   const A = DATA.architecture;
-  const W = 980, H = 540;
-  const srcX = 16, srcW = 168, srcH = 52, srcGap = 17, srcY0 = 30;
+  const ingest = getSourceMeta();
+  const ingestColor = DATA_SOURCE === "excel" ? "#FF8A3C" : "#00A3A1";
+  const W = 980, H = 600;
+  const srcX = 16, srcW = 168, srcH = 52, srcGap = 17;
+  const ingestH = 48, ingestGap = 14;
+  const srcY0 = 30 + ingestH + ingestGap + 8;
   const coreX = 300, coreW = 380, coreY = 48, coreH = 452;
   const outX = 748, outW = 216, outH = 64, outGap = 28, outY0 = 140;
+  const ingestY = 38;
+  const ingestEntryY = coreY + 56;
 
   let s = `<svg class="arch-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
 
@@ -505,6 +541,18 @@ function wireArchitecture() {
   // column labels
   const colLabel = (x, t) => `<text x="${x}" y="20" font-family="Oswald" font-size="11" letter-spacing="1.5" fill="#9AA7B3">${t}</text>`;
   s += colLabel(srcX, "SOURCE SYSTEMS") + colLabel(coreX, "DONNA INTELLIGENCE LAYER") + colLabel(outX, "OUTPUTS");
+
+  // primary data-ingestion node (swaps with source toggle)
+  const ingestCy = ingestY + ingestH / 2;
+  s += `<path id="flow-primary" class="flow" d="M ${srcX + srcW} ${ingestCy} C ${srcX + srcW + 75} ${ingestCy}, ${coreX - 75} ${ingestEntryY}, ${coreX} ${ingestEntryY}"
+        fill="none" stroke="${ingestColor}" stroke-width="2.8" opacity="0.85"/>`;
+  s += `<g class="arch-node arch-ingest" data-src="primary">
+    <rect x="${srcX}" y="${ingestY}" width="${srcW}" height="${ingestH}" rx="11" fill="#FFF9F4" stroke="${ingestColor}" stroke-width="2" style="filter:drop-shadow(0 4px 10px rgba(62,76,94,.12))"/>
+    <rect x="${srcX}" y="${ingestY}" width="5" height="${ingestH}" rx="2.5" fill="${ingestColor}"/>
+    <text x="${srcX + 16}" y="${ingestY + 16}" class="arch-ingest-label" font-family="Poppins" font-size="8.5" fill="#9AA7B3">DATA INGESTION</text>
+    <text x="${srcX + 16}" y="${ingestY + 33}" font-family="Oswald" font-size="12.5" font-weight="600" fill="#3E4C5E" letter-spacing="0.4">${ingest.label.toUpperCase()}</text>
+    <text x="${srcX + 16}" y="${ingestY + 44}" font-size="9" fill="#9AA7B3">${ingest.connector}</text>
+  </g>`;
 
   // core container
   s += `<rect x="${coreX}" y="${coreY}" width="${coreW}" height="${coreH}" rx="20" fill="#FFF4F9" stroke="url(#rkgrad)" stroke-width="1.6"/>`;
@@ -561,6 +609,28 @@ function wireArchitecture() {
 
   const detail = document.getElementById("archDetail");
   function showSource(id) {
+    if (id === "primary") {
+      const m = getSourceMeta();
+      document.querySelectorAll(".arch-node").forEach(n => n.classList.toggle("sel", n.dataset.src === id));
+      document.querySelectorAll(".flow[id^='flow-']").forEach(p => {
+        const on = p.id === "flow-primary";
+        p.setAttribute("stroke-width", on ? 3.5 : 2);
+        p.setAttribute("opacity", on ? 1 : 0.3);
+      });
+      detail.innerHTML = `
+        <span class="sys-type" style="color:${ingestColor}">Primary data register</span>
+        <h4>${m.label}</h4>
+        <p style="font-size:12px;color:var(--ink-soft);line-height:1.6">
+          The consolidated dashboard dataset lands here first — ${m.connector.toLowerCase()}.
+          Swapping between Excel and Smartsheet changes only this connector; everything downstream stays the same.
+        </p>
+        <dl>
+          <dt>Connector</dt><dd>${m.connector}</dd>
+          <dt>Sync</dt><dd>${m.sync}</dd>
+          <dt>Status</dt><dd>${m.status === "current" ? "Active (current)" : "Planned (future state)"}</dd>
+        </dl>`;
+      return;
+    }
     const src = A.sources.find(x => x.id === id);
     document.querySelectorAll(".arch-node").forEach(n => n.classList.toggle("sel", n.dataset.src === id));
     document.querySelectorAll(".flow[id^='flow-']").forEach(p => {
@@ -579,8 +649,21 @@ function wireArchitecture() {
       <ul>${src.keys.map(k => `<li>${k}</li>`).join("")}</ul>`;
   }
   document.querySelectorAll(".arch-node").forEach(n => n.addEventListener("click", () => showSource(n.dataset.src)));
-  showSource("sf");
+  showSource("primary");
+  if (restartFlows) restartFlowAnimation();
 }
+
+/* ---------------- data-source toggle ---------------- */
+document.getElementById("sourceToggle").addEventListener("click", e => {
+  const btn = e.target.closest(".source-seg");
+  if (!btn) return;
+  setDataSource(btn.dataset.source);
+});
+
+onDataSourceChange(() => {
+  updateSourceUI();
+  setTab(currentTab, { restartFlows: true, silent: true });
+});
 
 /* ---------------- easter egg ---------------- */
 let brandClicks = 0, brandTimer;
@@ -598,4 +681,5 @@ document.getElementById("brand").addEventListener("click", () => {
 });
 
 /* ---------------- boot ---------------- */
+updateSourceUI();
 setTab("overview");
