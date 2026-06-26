@@ -81,7 +81,7 @@ function firstActiveTab() {
   return active.length ? active[0].id : null;
 }
 
-function isLiveSource() { return DATA_SOURCE === "smartsheet"; }
+function isLiveSource() { return isSmartsheetPreview(); }
 
 function cardHintFor(moduleId, cardId) {
   const c = (CONFIG.CARDS[moduleId] || []).find(x => x.id === cardId);
@@ -147,12 +147,7 @@ function applyConfig() {
 }
 
 function kpiChrome(cardId) {
-  const layout = getSourceLayout();
-  if (isLiveSource()) return `<span class="kpi-live-dot" title="Live feed"></span>`;
-  if (layout.manualTags?.includes(cardId)) {
-    const upload = layout.lastUpload || "Last upload";
-    return `<span class="source-tag manual">Manual entry · ${upload}</span>`;
-  }
+  if (isSmartsheetPreview()) return `<span class="kpi-live-dot" title="Live feed"></span>`;
   return "";
 }
 
@@ -191,7 +186,7 @@ function runKpiNudge() {
 }
 
 function wireViewChrome(tabId, opts = {}) {
-  if (DATA_SOURCE === "smartsheet") {
+  if (isSmartsheetPreview()) {
     wireLiveSync();
     if (opts.fromSourceSwitch) runKpiNudge();
   } else {
@@ -217,28 +212,17 @@ function switchSourceView() {
   }, 340);
 }
 
-function updateSourceUI() {
-  const meta = getSourceMeta();
-  document.body.classList.remove("source-excel", "source-smartsheet");
-  document.body.classList.add(`source-${DATA_SOURCE}`);
-  document.querySelectorAll(".source-seg").forEach(btn => {
-    const on = btn.dataset.source === DATA_SOURCE;
-    btn.classList.toggle("active", on);
-    const pill = btn.querySelector(".source-pill");
-    if (pill) {
-      if (btn.dataset.source === "smartsheet") {
-        pill.textContent = on ? "Live" : "Planned";
-        pill.classList.toggle("live", on);
-      }
-    }
-  });
+function updateIntegrationUI() {
+  const liveCount = getLiveSystemCount();
+  document.body.classList.toggle("ss-preview-on", isSmartsheetPreview());
+  const toggle = document.getElementById("smartsheetPreviewToggle");
+  if (toggle) toggle.checked = isSmartsheetPreview();
   const status = document.getElementById("connectorStatus");
   if (status) {
-    if (isLiveSource()) {
-      status.innerHTML = `Source: <b>${meta.label}</b> · <span class="live-dot" style="display:inline-block;vertical-align:-1px;margin-right:4px;width:7px;height:7px"></span>Live sync`;
+    if (isSmartsheetPreview()) {
+      status.innerHTML = `<span class="live-dot" style="display:inline-block;vertical-align:-1px;margin-right:4px;width:7px;height:7px"></span><b>${liveCount + 1}</b> systems connected · Smartsheet preview on`;
     } else {
-      const upload = getSourceLayout().lastUpload || "";
-      status.innerHTML = `Source: <b>${meta.label}</b> · ${meta.connector}${upload ? ` · ${upload}` : ""}`;
+      status.innerHTML = `<b>${liveCount}</b> systems connected · live`;
     }
   }
 }
@@ -761,7 +745,7 @@ const VIEWS = {
       <p style="font-size:12.5px;line-height:1.7;color:var(--ink-soft)">
         DONNA is deliberately a <b>practical run capability for the c.18-month separation period</b>, not a long-term strategic platform.
         It reads from the systems of record — it never writes back — so it can be stood up quickly, and stood down cleanly when the TSA with Vestacy ends in ${inp("tsaEndDate")}.
-        Smartsheet remains the human-in-the-loop surface for manual validation and governance actions while its configuration is finalised.
+        Smartsheet will host demand registers and governance actions when it goes live — the preview toggle shows how that enriches the dashboard.
       </p>
     </div>`;
   },
@@ -770,8 +754,8 @@ const VIEWS = {
 /* ---------------- architecture diagram ---------------- */
 function wireArchitecture(restartFlows = false) {
   const A = inp("architecture");
-  const ingest = getSourceMeta();
-  const ingestColor = DATA_SOURCE === "excel" ? "#FF8A3C" : "#00A3A1";
+  const ingest = getIngestMeta();
+  const ingestColor = isSmartsheetPreview() ? "#00A3A1" : "#E4007C";
   const W = 980, H = 600;
   const srcX = 16, srcW = 168, srcH = 52, srcGap = 17;
   const ingestH = 48, ingestGap = 14;
@@ -838,7 +822,7 @@ function wireArchitecture(restartFlows = false) {
     // flow path (drawn first so nodes sit on top)
     s += `<path id="flow-${src.id}" class="flow" d="M ${srcX + srcW} ${cy} C ${srcX + srcW + 75} ${cy}, ${coreX - 75} ${entryY}, ${coreX} ${entryY}"
           fill="none" stroke="${src.color}" stroke-width="2" opacity="0.55"/>`;
-    s += `<g class="arch-node" data-src="${src.id}">
+    s += `<g class="arch-node ${src.id === "ss" && isSmartsheetPreview() ? "arch-active" : ""}" data-src="${src.id}">
       <rect x="${srcX}" y="${y}" width="${srcW}" height="${srcH}" rx="11" fill="#fff" stroke="#E3E8EE" stroke-width="1.5" style="filter:drop-shadow(0 3px 8px rgba(62,76,94,.10))"/>
       <rect x="${srcX}" y="${y}" width="5" height="${srcH}" rx="2.5" fill="${src.color}"/>
       <text x="${srcX + 16}" y="${y + 22}" font-family="Oswald" font-size="12.5" font-weight="600" fill="#3E4C5E" letter-spacing="0.4">${src.name.toUpperCase()}</text>
@@ -862,7 +846,7 @@ function wireArchitecture(restartFlows = false) {
   const detail = document.getElementById("archDetail");
   function showSource(id) {
     if (id === "primary") {
-      const m = getSourceMeta();
+      const m = getIngestMeta();
       document.querySelectorAll(".arch-node").forEach(n => n.classList.toggle("sel", n.dataset.src === id));
       document.querySelectorAll(".flow[id^='flow-']").forEach(p => {
         const on = p.id === "flow-primary";
@@ -870,20 +854,21 @@ function wireArchitecture(restartFlows = false) {
         p.setAttribute("opacity", on ? 1 : 0.3);
       });
       detail.innerHTML = `
-        <span class="sys-type" style="color:${ingestColor}">Primary data register</span>
+        <span class="sys-type" style="color:${ingestColor}">Integration layer</span>
         <h4>${m.label}</h4>
         <p style="font-size:12px;color:var(--ink-soft);line-height:1.6">
-          The consolidated dashboard dataset lands here first — ${m.connector.toLowerCase()}.
-          Swapping between Excel and Smartsheet changes only this connector; everything downstream stays the same.
+          DONNA ingests live feeds from ${getLiveSystemCount()} connected systems${isSmartsheetPreview() ? " plus Smartsheet (preview)" : ""}.
+          ${m.connector} — everything downstream stays the same when Smartsheet goes live.
         </p>
         <dl>
           <dt>Connector</dt><dd>${m.connector}</dd>
           <dt>Sync</dt><dd>${m.sync}</dd>
-          <dt>Status</dt><dd>${m.status === "current" ? "Active (current)" : "Planned (future state)"}</dd>
+          <dt>Status</dt><dd>Active</dd>
         </dl>`;
       return;
     }
     const src = A.sources.find(x => x.id === id);
+    const ssLive = id === "ss" && isSmartsheetPreview();
     document.querySelectorAll(".arch-node").forEach(n => n.classList.toggle("sel", n.dataset.src === id));
     document.querySelectorAll(".flow[id^='flow-']").forEach(p => {
       p.setAttribute("stroke-width", p.id === "flow-" + id ? 3.5 : 2);
@@ -891,7 +876,7 @@ function wireArchitecture(restartFlows = false) {
     });
     detail.innerHTML = `
       <span class="sys-type" style="color:${src.color}">Source system</span>
-      <h4>${src.name}</h4>
+      <h4>${src.name}${ssLive ? ' <span class="badge green">Live</span>' : id === "ss" ? ' <span class="badge grey">Planned</span>' : ""}</h4>
       <p style="font-size:12px;color:var(--ink-soft);line-height:1.6">${src.role}</p>
       <dl>
         <dt>Feeds</dt><dd>${src.feeds}</dd>
@@ -905,15 +890,13 @@ function wireArchitecture(restartFlows = false) {
   if (restartFlows) restartFlowAnimation();
 }
 
-/* ---------------- data-source toggle ---------------- */
-document.getElementById("sourceToggle").addEventListener("click", e => {
-  const btn = e.target.closest(".source-seg");
-  if (!btn) return;
-  setDataSource(btn.dataset.source);
+/* ---------------- Smartsheet preview toggle ---------------- */
+document.getElementById("smartsheetPreviewToggle").addEventListener("change", e => {
+  setSmartsheetPreview(e.target.checked);
 });
 
-onDataSourceChange(() => {
-  updateSourceUI();
+onSmartsheetPreviewChange(() => {
+  updateIntegrationUI();
   switchSourceView();
 });
 
@@ -933,11 +916,11 @@ document.getElementById("brand").addEventListener("click", () => {
 });
 
 /* ---------------- boot ---------------- */
-document.body.classList.add(`source-${DATA_SOURCE}`);
+if (isSmartsheetPreview()) document.body.classList.add("ss-preview-on");
 wireHelpUi();
 wireCalibrateUi();
 calBackdrop.addEventListener("click", closeCalPanel);
-updateSourceUI();
+updateIntegrationUI();
 buildNav();
 setTab("overview");
 showWelcomeIfNeeded();

@@ -128,51 +128,33 @@ body{
 .foot-logo{ height:30px; width:auto; margin-top:12px; opacity:.45; display:block; }
 .topbar-right{ display:flex; align-items:center; gap:14px; flex-shrink:0; }
 
-/* data-source segmented control */
-.source-toggle{
-  display:inline-flex; align-items:stretch;
-  background:#F4F6F9; border:1px solid var(--line); border-radius:99px;
-  padding:3px; gap:2px;
+/* Smartsheet preview toggle */
+.preview-toggle{
+  display:inline-flex; align-items:center; gap:8px; cursor:pointer;
+  font-size:11px; font-weight:600; color:var(--ink-soft); user-select:none;
 }
-.source-seg{
-  display:inline-flex; align-items:center; gap:6px;
-  border:none; background:transparent; cursor:pointer;
-  font-family:var(--body); font-size:11.5px; font-weight:600;
-  color:var(--ink-soft); padding:5px 12px; border-radius:99px;
-  transition:background .15s, color .15s, box-shadow .15s;
-  white-space:nowrap;
+.preview-toggle input{ position:absolute; opacity:0; width:0; height:0; }
+.preview-toggle-track{
+  width:34px; height:18px; border-radius:99px; background:#DDE3EA;
+  position:relative; transition:background .2s; flex-shrink:0;
 }
-.source-seg:hover{ color:var(--ink); }
-.source-seg.active{
-  background:var(--card); color:var(--ink);
-  box-shadow:0 2px 8px rgba(62,76,94,.10);
+.preview-toggle-track::after{
+  content:""; position:absolute; top:2px; left:2px; width:14px; height:14px;
+  border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.15);
+  transition:transform .2s;
 }
-.source-seg.active[data-source="excel"]{ color:var(--ink-soft); background:var(--card); }
-body.source-smartsheet .source-seg.active[data-source="smartsheet"]{
-  color:var(--green); background:#EBF5E2;
-  box-shadow:0 2px 8px rgba(91,168,33,.18);
-}
-body.source-excel .source-seg.active[data-source="excel"]{
-  color:var(--ink); background:var(--card);
-  box-shadow:0 2px 8px rgba(62,76,94,.10);
-}
-.source-pill{
-  font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-  color:var(--teal); background:#E0F4F4; border-radius:99px; padding:2px 6px;
-}
-body.source-smartsheet .source-seg.active .source-pill.live{
-  color:var(--green); background:#EBF5E2;
-}
+.preview-toggle input:checked + .preview-toggle-track{ background:#5BA821; }
+.preview-toggle input:checked + .preview-toggle-track::after{ transform:translateX(16px); }
+.preview-toggle-label{ white-space:nowrap; }
+body.ss-preview-on .preview-toggle-label{ color:#3D7316; }
 
 .connector-status{
   font-size:11px; color:var(--ink-soft); letter-spacing:.01em;
   white-space:nowrap; transition:color .35s ease;
 }
 .connector-status b{ color:var(--ink); font-weight:600; transition:color .35s ease; }
-body.source-smartsheet .connector-status{ color:#4A8A1B; }
-body.source-smartsheet .connector-status b{ color:#3D7316; }
-body.source-excel .connector-status{ color:var(--ink-soft); }
-body.source-excel .connector-status b{ color:var(--ink); }
+body.ss-preview-on .connector-status{ color:#4A8A1B; }
+body.ss-preview-on .connector-status b{ color:#3D7316; }
 .env-badge{
   font-size:10px; font-weight:600; letter-spacing:.08em;
   color:var(--rk-pink); border:1px solid #F6BBD8; background:#FDF0F7;
@@ -205,6 +187,21 @@ body.source-excel .connector-status b{ color:var(--ink); }
 .side-panel.open{ transform:translateX(0); }
 
 .page-head-row{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.page-sources{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px; }
+.source-chip{
+  display:inline-flex; align-items:center; gap:5px;
+  font-size:10.5px; font-weight:600; letter-spacing:.02em;
+  padding:3px 9px; border-radius:99px; border:1px solid var(--line);
+  background:#F4F6F9; color:var(--ink-soft);
+}
+.source-chip.live{ background:#F0F7EA; border-color:#C8E4B0; color:#3D7316; }
+.source-chip.planned{ background:#F4F6F9; border-color:#DDE3EA; color:var(--ink-faint); }
+body.ss-preview-on .source-chip.planned .chip-pill{ display:none; }
+.chip-pill{
+  font-size:8px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--ink-faint); background:#E8ECF0; border-radius:99px; padding:1px 5px;
+}
+.conn-summary{ font-size:12.5px; color:var(--ink-soft); margin-bottom:14px; }
 .help-btn{
   border:1px solid var(--line); background:#F4F6F9; color:var(--ink-soft);
   font-size:11px; font-weight:600; padding:5px 11px; border-radius:99px; cursor:pointer;
@@ -409,11 +406,6 @@ body.source-excel .connector-status b{ color:var(--ink); }
   50%{ box-shadow:0 0 0 6px rgba(91,168,33,0); }
 }
 
-.source-tag.manual{
-  display:inline-block; font-size:9.5px; font-weight:600; letter-spacing:.03em;
-  color:var(--ink-faint); background:#EEF1F4; border:1px solid var(--line);
-  padding:3px 8px; border-radius:99px; margin-bottom:8px;
-}
 
 .live-sync-card{
   background:linear-gradient(135deg,#F0FAF0,#F8FFF4);
@@ -549,6 +541,7 @@ tr.flagged td{ background:#FFF7FB; }
 .arch-node rect{ transition:stroke .15s, filter .15s; }
 .arch-node:hover rect{ filter:brightness(.97); }
 .arch-node.sel rect{ stroke:var(--rk-pink); stroke-width:2; }
+.arch-node.arch-active rect{ stroke:#00A3A1; stroke-width:2.5; filter:drop-shadow(0 4px 12px rgba(0,163,161,.25)); }
 
 .arch-ingest rect{ transition:stroke .2s, filter .2s; }
 .arch-ingest.sel rect{ stroke-width:2.5; }

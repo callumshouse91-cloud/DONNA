@@ -3,95 +3,113 @@
    Loaded into CONFIG on init; restored on reset.
    ============================================================ */
 
+function _src(name) {
+  return { name, status: name === "Smartsheet" ? "planned" : "live" };
+}
+
+const _ALL_INTEGRATED = [
+  "ServiceNow", "MSP Ticketing", "SuccessFactors", "MSP Tracker",
+  "HAM", "SAM", "Procurement", "Finance Systems", "Excel", "Smartsheet",
+].map(_src);
+
 const DEFAULT_CONFIG = {
   MODULES: [
     {
       id: "overview", label: "Overview", enabled: true, order: 1,
+      sources: [_src("Smartsheet"), _src("ServiceNow")],
       help: {
         whatItIs: "Your single-page summary of how the TSA separation is going right now.",
         whyItMatters: "Gives you one trusted answer before a governance call — who is over the user commitment, what is chargeable, and what needs action.",
-        whatItsDoing: "Pulls headcount, billing, service and exception figures together. Green means on track; amber is a watch item; red needs a decision. Numbers come from the input mappings you can edit in Calibrate.",
-        dataSourceNote: "Today these metrics are read from your Excel export columns. When Smartsheet is connected, the same cards read live — you only change the source toggle.",
+        whatItsDoing: "Pulls headcount, billing, service and exception figures together from live connected systems. Green means on track; amber is a watch item; red needs a decision.",
+        dataSourceNote: "Aggregates live feeds from ServiceNow and other integrated systems. Smartsheet will add demand and governance registers when it goes live.",
         inputKeys: ["workforceCurrent", "tsaBaseline", "workforceAboveBaseline", "billingOutTsa", "serviceResolvedInSla", "exceptions"],
       },
     },
     {
       id: "workforce", label: "Workforce vs TSA", enabled: true, order: 2,
+      sources: [_src("ServiceNow"), _src("MSP Ticketing")],
       help: {
         whatItIs: "Shows who is using TSA services compared to the agreed user commitment.",
         whyItMatters: "Helps you spot overages early — extra users can mean extra monthly charges that need agreeing with Vestacy.",
-        whatItsDoing: "Joins permanent staff (SuccessFactors) and contingent workers (MSP tracker), classifies joiners as replacement hires or net new, and highlights when you are above the baseline.",
-        dataSourceNote: "Headcount and movement data map to Excel fields like WS_Current_Users and WS_Joiners — re-point these in Calibrate if your spreadsheet column names differ.",
+        whatItsDoing: "Joins permanent staff and contingent workers, classifies joiners as replacement hires or net new, and highlights when you are above the baseline.",
+        dataSourceNote: "Headcount and movement data flow live from ServiceNow and MSP Ticketing into DONNA's unified model.",
         inputKeys: ["workforceCurrent", "workforceJoiners", "workforceLeavers", "workforceAboveBaseline", "workforceMovers"],
       },
     },
     {
       id: "hardware", label: "EUC & Hardware", enabled: true, order: 3,
+      sources: [_src("SuccessFactors"), _src("MSP Tracker"), _src("ServiceNow")],
       help: {
         whatItIs: "Tracks laptops, BYOD and whether each person’s device matches their onboarding record.",
-        whyItMatters: "Stops manual hardware checks — mismatches flag where a charge might apply or where data quality needs fixing.",
-        whatItsDoing: "Links onboarding to the hardware asset register (HAM). Pending requests turn amber when they exceed your threshold; mismatches show in red.",
-        dataSourceNote: "Device counts and validation rows map to HW_* Excel columns today; Smartsheet will use the paired smartsheet field names.",
+        whyItMatters: "Replaces manual hardware checks — mismatches flag where a charge might apply or where data quality needs fixing.",
+        whatItsDoing: "Links onboarding records to the hardware asset register. Pending requests turn amber when they exceed your threshold; mismatches show in red.",
+        dataSourceNote: "SuccessFactors and MSP Tracker supply onboarding; ServiceNow links service requests to device fulfilment.",
         inputKeys: ["hardwareLaptopsIssued", "hardwareByod", "hardwarePendingRequests", "hardwareValidation"],
       },
     },
     {
       id: "software", label: "Software & Licensing", enabled: true, order: 4,
+      sources: [_src("HAM"), _src("ServiceNow")],
       help: {
         whatItIs: "A register of software licences — standard, non-standard and right-to-use.",
         whyItMatters: "Non-standard software is often chargeable to Vestacy; this view shows what was approved and what is still waiting.",
         whatItsDoing: "Classifies each licence, tracks monthly and cumulative cost, and flags items awaiting approval if they exceed your warning threshold.",
-        dataSourceNote: "Costs and register rows map to SW_* fields in your Excel export.",
+        dataSourceNote: "HAM holds device-linked software; ServiceNow captures software requests and approvals.",
         inputKeys: ["softwareStandardCost", "softwareNonStandardCost", "softwareItems"],
       },
     },
     {
       id: "service", label: "Service Activity", enabled: true, order: 5,
+      sources: [_src("SAM"), _src("ServiceNow"), _src("Procurement")],
       help: {
-        whatItIs: "A monthly summary of IT service desk performance from ServiceNow.",
+        whatItIs: "A monthly summary of IT service desk performance.",
         whyItMatters: "Governance calls need to know if service is improving and whether aged tickets are a risk.",
         whatItsDoing: "Shows incidents, requests, SLA attainment and aged items. Colours reflect the SLA targets you set in Calibrate.",
-        dataSourceNote: "Ticket volumes and SLA % map to SVC_* Excel columns.",
+        dataSourceNote: "ServiceNow is the primary ticket feed; SAM and Procurement add software and supply-chain context.",
         inputKeys: ["serviceIncidents", "serviceRequests", "serviceResolvedInSla", "serviceAged"],
       },
     },
     {
       id: "demand", label: "Demand & Approvals", enabled: true, order: 6,
+      sources: [_src("Finance Systems"), _src("Procurement"), _src("Smartsheet")],
       help: {
-        whatItIs: "A single register of demands raised during the TSA — from ServiceNow, Smartsheet or Excel.",
+        whatItIs: "A single register of demands raised during the TSA — from any connected system.",
         whyItMatters: "Anything outside TSA scope needs costing and approval before work starts; this prevents surprises on the invoice.",
         whatItsDoing: "Lists each demand with owner, stage, scope flag and estimated cost. Items outside TSA scope are highlighted.",
-        dataSourceNote: "Demand rows map to the DMD_Register field in Excel.",
+        dataSourceNote: "Finance Systems and Procurement supply cost data; Smartsheet will host the governance register when live.",
         inputKeys: ["demandRows"],
       },
     },
     {
       id: "billing", label: "Billing & Exceptions", enabled: true, order: 7,
+      sources: [_src("Smartsheet"), _src("ServiceNow"), _src("Excel")],
       help: {
         whatItIs: "Matches invoice lines back to the people, assets or demands that evidence each charge.",
         whyItMatters: "Separates the base TSA fee from chargeable extras so you can explain every line on the monthly invoice.",
         whatItsDoing: "Shows invoice breakdown, market split and the exception log. Chargeable share turns amber when it exceeds your configured percentage.",
-        dataSourceNote: "Invoice totals and lines map to FIN_* Excel fields.",
+        dataSourceNote: "Finance Systems feed invoice lines; ServiceNow and Excel registers provide cross-check evidence.",
         inputKeys: ["billingMonthTotal", "billingOutTsa", "billingLines", "exceptions"],
       },
     },
     {
       id: "report", label: "Monthly Report", enabled: true, order: 8,
+      sources: [_src("Finance Systems"), _src("SuccessFactors")],
       help: {
         whatItIs: "The draft monthly TSA pack and governance actions list.",
         whyItMatters: "Saves hours assembling the governance slide deck — Donna drafts the narrative; your team reviews before sending.",
         whatItsDoing: "Auto-populates each section from the other modules and drafts plain-English commentary for the Reckitt ↔ Vestacy call.",
-        dataSourceNote: "Narrative and actions map to RPT_Narrative and RPT_Actions in Excel.",
+        dataSourceNote: "Draws narrative and actions from Finance Systems and SuccessFactors position data across all modules.",
         inputKeys: ["reportNarrative", "reportActions"],
       },
     },
     {
       id: "arch", label: "Architecture", enabled: true, order: 9,
+      sources: _ALL_INTEGRATED,
       help: {
         whatItIs: "A diagram of how DONNA sits above your existing systems without replacing them.",
         whyItMatters: "Helps stakeholders see that DONNA reads from systems of record and can be stood down cleanly when the TSA ends.",
-        whatItsDoing: "Shows data flowing from source systems through DONNA’s rules engine to the monthly outputs. The ingestion node changes label when you switch Excel ↔ Smartsheet.",
-        dataSourceNote: "Illustrative only — the diagram reflects your active data source, not live connection status.",
+        whatItsDoing: "Shows data flowing from all connected source systems through DONNA's rules engine to the monthly outputs.",
+        dataSourceNote: "Illustrates every integrated system — all live today except Smartsheet, which is planned for go-live in ~3 months.",
         inputKeys: ["architecture"],
       },
     },
@@ -181,17 +199,14 @@ const DEFAULT_CONFIG = {
   },
 
   LAYOUT: {
-    excel: {
-      lastUpload: "14 May 2026, 09:42",
+    baseline: {
       kpi: { cols: 2, cards: ["workforceCurrent", "billingOutTsa", "serviceSla", "exceptionsCount"] },
       secondary: { cols: 2, cards: ["consumptionChart", "monthSummary"] },
-      manualTags: ["workforceCurrent", "billingOutTsa"],
       showExceptions: true,
     },
     smartsheet: {
       kpi: { cols: 3, cards: ["liveSync", "workforceCurrent", "billingOutTsa", "serviceSla", "exceptionsCount", "connectedSheets"] },
       secondary: { cols: 3, cards: ["consumptionChart", "monthSummary", "recentChanges"] },
-      manualTags: [],
       showExceptions: true,
     },
   },
@@ -208,23 +223,25 @@ const DEFAULT_CONFIG = {
   },
 
   CONNECTIONS: {
-    excel: {
-      status: "Active",
-      connector: "Manual upload",
-      help: "Your Excel export is uploaded manually. When you receive a new file, upload it and DONNA refreshes from the mapped columns.",
-    },
-    smartsheet: {
-      status: "Planned · not yet connected",
-      connector: "Live API sync",
-      sheetId: "",
-      syncFrequency: "hourly",
-      help: "When Smartsheet goes live in ~3 months, you enter the Sheet ID here and turn on sync. The dashboard layout, cards and thresholds stay exactly as you configured them — only this connection changes.",
-    },
+    help: "DONNA reads live from the connected systems below. Smartsheet is the one system being added — when it goes live in ~3 months, this is the exact slot it plugs into. Nothing else in DONNA needs to change.",
+    systems: [
+      { name: "ServiceNow", status: "live", connector: "API · hourly" },
+      { name: "MSP Ticketing", status: "live", connector: "API · hourly" },
+      { name: "SuccessFactors", status: "live", connector: "Daily extract" },
+      { name: "MSP Tracker", status: "live", connector: "Weekly sync" },
+      { name: "HAM", status: "live", connector: "Daily sync" },
+      { name: "SAM", status: "live", connector: "Daily sync" },
+      { name: "Procurement", status: "live", connector: "Daily sync" },
+      { name: "Finance Systems", status: "live", connector: "Monthly extract" },
+      { name: "Excel", status: "live", connector: "Connected register" },
+      { name: "Smartsheet", status: "planned", connector: "API · on change", eta: "Going live ~3 months" },
+    ],
+    smartsheet: { sheetId: "", syncFrequency: "hourly" },
   },
 
   GUIDE: {
     title: "How DONNA works",
-    intro: "DONNA is your TSA run-and-control dashboard for the Reckitt ↔ Vestacy separation. It sits above your existing systems — it reads from them but never writes back — and gives you one place to see position, charges and exceptions during the ~18-month TSA period.",
+    intro: "DONNA is your TSA run-and-control dashboard for the Reckitt ↔ Vestacy separation. It sits above your existing systems as a live integration layer — it reads from them but never writes back — and gives you one place to see position, charges and exceptions during the ~18-month TSA period.",
     sections: [
       {
         heading: "What DONNA is",
@@ -232,18 +249,18 @@ const DEFAULT_CONFIG = {
       },
       {
         heading: "Where data comes from",
-        body: "Today DONNA reads from an Excel export you upload (manual snapshot). In a few months you will switch to Smartsheet live sync — that is a single toggle at the top, not a rebuild. The same cards, thresholds and layout stay; only the connector changes.",
+        body: "DONNA already draws live from ServiceNow, SuccessFactors, HAM, SAM, Finance Systems and other connected registers. Smartsheet is being added in ~3 months for demand and governance workflows — use the preview toggle to see how the dashboard will look when it goes live. No rebuild required.",
       },
       {
         heading: "How to make it yours",
-        body: "Open Calibrate (gear icon) to rename or reorder tabs, add cards, re-point which Excel column feeds each metric, and tune amber/red thresholds. Everything saves automatically in this browser. Export your setup as a file to move it to another machine or share with a colleague.",
+        body: "Open Calibrate to rename or reorder tabs, add cards, re-point input mappings, and tune amber/red thresholds. Everything saves automatically in this browser. Export your setup as a file to move it to another machine or share with a colleague.",
       },
     ],
     tryThis: [
       "Read the ⓘ help on any page to understand what you are looking at.",
-      "Open Calibrate → Modules and hide a tab you do not need.",
+      "Open Connections to see every system DONNA reads from.",
+      "Toggle Show planned Smartsheet integration to preview the future layout.",
       "Lower the commitment red threshold and watch workforce tiles change colour.",
-      "Toggle Excel ↔ Smartsheet to see the layout and live tiles transform.",
       "Export configuration, refresh the page, then Import to restore your setup.",
     ],
   },
@@ -251,9 +268,9 @@ const DEFAULT_CONFIG = {
   CALIBRATE_HELP: {
     modules: "Turn tabs on or off, rename them, and reorder the left menu. Add your own modules for extra views — each can carry its own help text.",
     cards: "Choose a module, then edit its cards: rename metrics, pick which data field feeds them, and add plain-English hints shown on ⓘ icons.",
-    inputs: "This is where each number on the dashboard connects to your spreadsheet. Change the Excel column name here when your export layout changes — no code required.",
+    inputs: "This is where each number on the dashboard connects to fields in your source systems. Change a mapping here when a connector's field name changes — no code required.",
     calibration: "Tune amber and red thresholds, reporting period labels and charge assumptions. The dashboard recolours live as you adjust sliders.",
-    connections: "See which data source is active today and configure the Smartsheet slot ready for go-live. The source toggle at the top previews the future layout.",
+    connections: "See every system DONNA is connected to. Smartsheet is planned for ~3 months — configure the stub here so go-live is a single connection step.",
     persistence: "Your changes are saved automatically in this browser. Export to keep a portable copy.",
   },
 };

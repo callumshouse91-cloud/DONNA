@@ -104,25 +104,31 @@ function renderCalPanel() {
     </div>`;
   }).join("");
 
-  const conn = CONFIG.CONNECTIONS;
+  const conn = CONFIG.CONNECTIONS || {};
+  const systems = conn.systems || [];
+  const ss = conn.smartsheet || {};
   const connectionsHtml = `
-    <div class="conn-card">
-      <div class="conn-head"><span class="badge green">Active</span> <b>Excel</b></div>
-      <p class="conn-meta">${conn.excel.connector} · ${conn.excel.status}</p>
-      <p class="cal-section-hint">${conn.excel.help}</p>
-    </div>
-    <div class="conn-card conn-planned">
-      <div class="conn-head"><span class="badge grey">Planned</span> <b>Smartsheet</b></div>
-      <p class="conn-meta">${conn.smartsheet.status}</p>
-      <label class="cal-mini">Sheet ID <input type="text" data-conn-sheet value="${conn.smartsheet.sheetId || ""}" placeholder="e.g. 4839201742081924"></label>
-      <label class="cal-mini">Sync frequency
-        <select data-conn-freq>
-          ${["realtime", "hourly", "daily"].map(f => `<option value="${f}" ${conn.smartsheet.syncFrequency === f ? "selected" : ""}>${f}</option>`).join("")}
-        </select>
-      </label>
-      <button type="button" class="cal-btn secondary" id="testConnBtn">Test connection</button>
-      <p class="cal-section-hint">${conn.smartsheet.help}</p>
-    </div>`;
+    <p class="cal-section-hint">${conn.help || ""}</p>
+    ${systems.map(sys => {
+      const live = effectiveSourceStatus(sys) === "live";
+      const isSs = sys.name === "Smartsheet";
+      return `<div class="conn-card ${live ? "" : "conn-planned"}">
+        <div class="conn-head">
+          <span class="badge ${live ? "green" : "grey"}">${live ? "Connected · live" : "Planned"}</span>
+          <b>${sys.name}</b>
+        </div>
+        <p class="conn-meta">${sys.connector}${sys.eta && !live ? ` · ${sys.eta}` : ""}</p>
+        ${isSs ? `
+        <label class="cal-mini">Sheet ID <input type="text" data-conn-sheet value="${ss.sheetId || ""}" placeholder="e.g. 4839201742081924"></label>
+        <label class="cal-mini">Sync frequency
+          <select data-conn-freq>
+            ${["realtime", "hourly", "daily"].map(f => `<option value="${f}" ${ss.syncFrequency === f ? "selected" : ""}>${f}</option>`).join("")}
+          </select>
+        </label>
+        <button type="button" class="cal-btn secondary" id="testConnBtn">Test connection</button>
+        ` : ""}
+      </div>`;
+    }).join("")}`;
 
   const modHelp = getModule(calActiveModule)?.help || {};
   const helpFieldsHtml = `
@@ -220,7 +226,8 @@ function closeCalPanel() {
   calPanelOpen = false;
   calPanel.classList.remove("open");
   if (!document.getElementById("helpPanel")?.classList.contains("open") &&
-      !document.getElementById("guidePanel")?.classList.contains("open")) {
+      !document.getElementById("guidePanel")?.classList.contains("open") &&
+      !document.getElementById("connectionsPanel")?.classList.contains("open")) {
     calBackdrop.classList.remove("open");
   }
 }
@@ -251,7 +258,8 @@ function wireCalibrateUi() {
       if (c) c.viz = e.target.value;
       notifyConfigChange();
     }
-    if (e.target.dataset.connFreq) {
+    if (e.target.hasAttribute("data-conn-freq")) {
+      if (!CONFIG.CONNECTIONS.smartsheet) CONFIG.CONNECTIONS.smartsheet = {};
       CONFIG.CONNECTIONS.smartsheet.syncFrequency = e.target.value;
       notifyConfigChange();
     }
@@ -294,7 +302,8 @@ function wireCalibrateUi() {
       const inp = CONFIG.INPUTS.find(i => i.key === e.target.dataset.inputSs);
       if (inp) { inp.smartsheetField = e.target.value; notifyConfigChange(); }
     }
-    if (e.target.dataset.connSheet !== undefined) {
+    if (e.target.hasAttribute("data-conn-sheet")) {
+      if (!CONFIG.CONNECTIONS.smartsheet) CONFIG.CONNECTIONS.smartsheet = {};
       CONFIG.CONNECTIONS.smartsheet.sheetId = e.target.value;
       notifyConfigChange();
     }
@@ -369,7 +378,7 @@ function wireCalibrateUi() {
     if (e.target.id === "exportConfigBtn") exportConfigFile();
     if (e.target.id === "resetConfigBtn" && confirm("Reset everything to the shipped default? Your saved changes in this browser will be cleared.")) {
       resetToDefaultConfig();
-      updateSourceUI();
+      updateIntegrationUI();
       renderCalPanel();
       showToast("Restored default configuration.");
     }
@@ -380,7 +389,7 @@ function wireCalibrateUi() {
     if (!file) return;
     importConfigFile(file, (ok, err) => {
       showToast(ok ? "Configuration imported." : (err || "Import failed."));
-      if (ok) { updateSourceUI(); renderCalPanel(); }
+      if (ok) { updateIntegrationUI(); renderCalPanel(); }
       e.target.value = "";
     });
   });

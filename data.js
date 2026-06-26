@@ -3,22 +3,34 @@
    Period: Jan – May 2026 · Reporting month: May 2026
    ============================================================ */
 
-let DATA_SOURCE = "excel"; // "excel" | "smartsheet"
+/** Demo toggle — previews Smartsheet as live (layout + chips + arch node). Default off. */
+let SMARTSHEET_PREVIEW = false;
 
-const SOURCE_META = {
-  excel: {
-    label: "Excel export",
-    connector: "Manual upload",
-    sync: "Last refreshed manually",
-    status: "current",
-  },
-  smartsheet: {
-    label: "Smartsheet API",
-    connector: "Live sync",
-    sync: "Auto-synced",
-    status: "planned",
-  },
-};
+const INTEGRATION_SYSTEMS = [
+  { id: "servicenow", name: "ServiceNow", status: "live", connector: "API · hourly" },
+  { id: "msp_ticketing", name: "MSP Ticketing", status: "live", connector: "API · hourly" },
+  { id: "successfactors", name: "SuccessFactors", status: "live", connector: "Daily extract" },
+  { id: "msp_tracker", name: "MSP Tracker", status: "live", connector: "Weekly sync" },
+  { id: "ham", name: "HAM", status: "live", connector: "Daily sync" },
+  { id: "sam", name: "SAM", status: "live", connector: "Daily sync" },
+  { id: "procurement", name: "Procurement", status: "live", connector: "Daily sync" },
+  { id: "finance", name: "Finance Systems", status: "live", connector: "Monthly extract" },
+  { id: "excel", name: "Excel", status: "live", connector: "Connected register" },
+  { id: "smartsheet", name: "Smartsheet", status: "planned", connector: "API · on change", eta: "~3 months" },
+];
+
+function isSmartsheetPreview() { return SMARTSHEET_PREVIEW; }
+
+function getIngestMeta() {
+  if (SMARTSHEET_PREVIEW) {
+    return { label: "Smartsheet register", connector: "Live API sync", sync: "Auto-synced", status: "active" };
+  }
+  return { label: "Integrated systems", connector: "Live multi-source feeds", sync: "Continuous", status: "active" };
+}
+
+function getLiveSystemCount() {
+  return INTEGRATION_SYSTEMS.filter(s => s.status === "live").length;
+}
 
 const _DATA = {
   months: ["Jan", "Feb", "Mar", "Apr", "May"],
@@ -208,20 +220,16 @@ function getData() {
   return _DATA;
 }
 
-function getSourceMeta(source = DATA_SOURCE) {
-  return SOURCE_META[source];
+let _onSmartsheetPreviewChange = null;
+
+function onSmartsheetPreviewChange(fn) {
+  _onSmartsheetPreviewChange = fn;
 }
 
-let _onDataSourceChange = null;
-
-function onDataSourceChange(fn) {
-  _onDataSourceChange = fn;
-}
-
-function setDataSource(source) {
-  if (source !== "excel" && source !== "smartsheet") return;
-  if (source === DATA_SOURCE) return;
-  DATA_SOURCE = source;
+function setSmartsheetPreview(on) {
+  const next = !!on;
+  if (next === SMARTSHEET_PREVIEW) return;
+  SMARTSHEET_PREVIEW = next;
   if (typeof savePersistedConfig === "function") savePersistedConfig();
-  if (typeof _onDataSourceChange === "function") _onDataSourceChange(source);
+  if (typeof _onSmartsheetPreviewChange === "function") _onSmartsheetPreviewChange(next);
 }

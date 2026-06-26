@@ -25,6 +25,20 @@ function deepMerge(base, patch) {
   return out;
 }
 
+function migrateConfig() {
+  DEFAULT_CONFIG.MODULES.forEach(def => {
+    const mod = CONFIG.MODULES.find(m => m.id === def.id);
+    if (mod && !mod.sources) mod.sources = deepClone(def.sources);
+  });
+  if (!CONFIG.LAYOUT.baseline && CONFIG.LAYOUT.excel) {
+    CONFIG.LAYOUT.baseline = CONFIG.LAYOUT.excel;
+    delete CONFIG.LAYOUT.excel;
+  }
+  if (!CONFIG.CONNECTIONS.systems && DEFAULT_CONFIG.CONNECTIONS.systems) {
+    CONFIG.CONNECTIONS = deepMerge(deepClone(DEFAULT_CONFIG.CONNECTIONS), CONFIG.CONNECTIONS || {});
+  }
+}
+
 function loadPersistedConfig() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -32,10 +46,10 @@ function loadPersistedConfig() {
     const saved = JSON.parse(raw);
     if (saved && saved.config && typeof saved.config === "object") {
       CONFIG = deepMerge(deepClone(DEFAULT_CONFIG), saved.config);
+      migrateConfig();
     }
-    if (saved.activeSource === "excel" || saved.activeSource === "smartsheet") {
-      DATA_SOURCE = saved.activeSource;
-    }
+    if (saved.smartsheetPreview === true) SMARTSHEET_PREVIEW = true;
+    else if (saved.activeSource === "smartsheet") SMARTSHEET_PREVIEW = true;
     if (saved.onboardingDismissed) _onboardingDismissed = true;
   } catch (_) {
     CONFIG = deepClone(DEFAULT_CONFIG);
@@ -47,7 +61,7 @@ function savePersistedConfig() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       version: 1,
       config: CONFIG,
-      activeSource: DATA_SOURCE,
+      smartsheetPreview: SMARTSHEET_PREVIEW,
       onboardingDismissed: _onboardingDismissed,
       savedAt: new Date().toISOString(),
     }));
@@ -56,7 +70,7 @@ function savePersistedConfig() {
 
 function resetToDefaultConfig() {
   CONFIG = deepClone(DEFAULT_CONFIG);
-  DATA_SOURCE = "excel";
+  SMARTSHEET_PREVIEW = false;
   try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
   savePersistedConfig();
   notifyConfigChange();
@@ -66,7 +80,7 @@ function exportConfigFile() {
   const blob = new Blob([JSON.stringify({
     version: 1,
     exportedAt: new Date().toISOString(),
-    activeSource: DATA_SOURCE,
+    smartsheetPreview: SMARTSHEET_PREVIEW,
     config: CONFIG,
   }, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
@@ -94,9 +108,9 @@ function importConfigFile(file, onDone) {
         return;
       }
       CONFIG = deepMerge(deepClone(DEFAULT_CONFIG), data.config || data);
-      if (data.activeSource === "excel" || data.activeSource === "smartsheet") {
-        DATA_SOURCE = data.activeSource;
-      }
+      if (data.smartsheetPreview === true) SMARTSHEET_PREVIEW = true;
+      else if (data.activeSource === "smartsheet") SMARTSHEET_PREVIEW = true;
+      else if (data.smartsheetPreview === false) SMARTSHEET_PREVIEW = false;
       savePersistedConfig();
       notifyConfigChange();
       onDone(true);
@@ -127,7 +141,25 @@ function getCardsForLayout(section, cardIds) {
 
 function cardVisibleForSource(card) {
   if (!card.sources || card.sources.includes("both")) return true;
-  return card.sources.includes(DATA_SOURCE);
+  if (card.sources.includes("smartsheet")) return isSmartsheetPreview();
+  return true;
+}
+
+function effectiveSourceStatus(source) {
+  if (!source) return "live";
+  if (source.name === "Smartsheet" && isSmartsheetPreview()) return "live";
+  return source.status || "live";
+}
+
+function formatModuleSourcesNote(moduleId) {
+  const mod = getModule(moduleId);
+  const sources = mod?.sources || [];
+  if (!sources.length) return "Feeds from all integrated systems connected to DONNA.";
+  return sources.map(s => {
+    const st = effectiveSourceStatus(s);
+    const label = st === "live" ? "connected and live" : "planned — going live in ~3 months";
+    return `<b>${s.name}</b> (${label})`;
+  }).join("; ") + ".";
 }
 
 function slugId(label) {
@@ -149,6 +181,7 @@ function addModule({ label, whatItIs, whyItMatters, whatItsDoing, dataSourceNote
   const maxOrder = Math.max(0, ...CONFIG.MODULES.map(m => m.order || 0));
   CONFIG.MODULES.push({
     id, label: label.trim(), enabled: true, order: maxOrder + 1,
+    sources: [{ name: "ServiceNow", status: "live" }],
     help: {
       whatItIs: whatItIs || "Describe what this view shows.",
       whyItMatters: whyItMatters || "Explain why this helps your team.",
@@ -180,7 +213,8 @@ function addCard(moduleId, { label, inputKey, viz, hint, section }) {
     hint: hint || "What this metric means and what good looks like.",
   };
   cards.push(card);
-  const layout = CONFIG.LAYOUT[DATA_SOURCE];
+  const layoutKey = isSmartsheetPreview() ? "smartsheet" : "baseline";
+  const layout = CONFIG.LAYOUT[layoutKey];
   if (moduleId === "overview" && layout?.kpi && section === "kpi") {
     layout.kpi.cards.push(id);
   }
@@ -235,11 +269,12 @@ function getActiveModules() {
 }
 
 function getSourceLayout() {
-  return CONFIG.LAYOUT[DATA_SOURCE] || CONFIG.LAYOUT.excel;
+  const key = isSmartsheetPreview() ? "smartsheet" : "baseline";
+  return CONFIG.LAYOUT[key] || CONFIG.LAYOUT.baseline;
 }
 
 function getInputFieldName(entry) {
-  return DATA_SOURCE === "smartsheet" ? (entry.smartsheetField || entry.sourceField) : entry.sourceField;
+  return entry.sourceField;
 }
 
 function onConfigChange(fn) { _onConfigChange = fn; }
