@@ -233,10 +233,20 @@ function closeCalPanel() {
 }
 
 function wireCalibrateUi() {
-  document.getElementById("calibrateBtn").addEventListener("click", openCalPanel);
-  document.getElementById("calClose").addEventListener("click", closeCalPanel);
+  document.getElementById("calibrateBtn")?.addEventListener("click", openCalPanel);
+  document.getElementById("calClose")?.addEventListener("click", closeCalPanel);
 
-  calBody.addEventListener("change", e => {
+  calBody?.addEventListener("change", e => {
+    if (e.target?.id === "importConfigFile") {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      importConfigFile(file, (ok, err) => {
+        showToast(ok ? "Configuration imported." : (err || "Import failed."));
+        if (ok) { updateIntegrationUI(); renderCalPanel(); }
+        e.target.value = "";
+      });
+      return;
+    }
     const enable = e.target.dataset.modEnable;
     if (enable) {
       const mod = CONFIG.MODULES.find(m => m.id === enable);
@@ -265,7 +275,7 @@ function wireCalibrateUi() {
     }
   });
 
-  calBody.addEventListener("input", e => {
+  calBody?.addEventListener("input", e => {
     const path = e.target.dataset.calRange || e.target.dataset.calNum;
     if (path) {
       const val = parseFloat(e.target.value);
@@ -309,7 +319,7 @@ function wireCalibrateUi() {
     }
   });
 
-  calBody.addEventListener("click", e => {
+  calBody?.addEventListener("click", e => {
     if (e.target.dataset.modUp) moveModule(e.target.dataset.modUp, -1);
     if (e.target.dataset.modDown) moveModule(e.target.dataset.modDown, 1);
     if (e.target.dataset.modDel && confirm("Remove this module? Its cards will be deleted.")) {
@@ -382,16 +392,6 @@ function wireCalibrateUi() {
       renderCalPanel();
       showToast("Restored default configuration.");
     }
-  });
-
-  document.getElementById("importConfigFile").addEventListener("change", e => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    importConfigFile(file, (ok, err) => {
-      showToast(ok ? "Configuration imported." : (err || "Import failed."));
-      if (ok) { updateIntegrationUI(); renderCalPanel(); }
-      e.target.value = "";
-    });
   });
 }
 
