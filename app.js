@@ -147,17 +147,34 @@ function setTab(id, opts = {}) {
   }
 }
 
-function initDashboard() {
-  ensureValidConfig();
+function selfHealTabs() {
+  if (getActiveModules().length > 0) return false;
+
+  console.warn("DONNA: no active modules on load — restoring defaults.");
+
+  DEFAULT_CONFIG.MODULES.forEach(def => {
+    let mod = CONFIG.MODULES.find(m => m.id === def.id);
+    if (!mod) { mod = deepClone(def); CONFIG.MODULES.push(mod); }
+    mod.enabled = true;
+  });
+
+  savePersistedConfig();
   buildNav();
-  if (getActiveModules().length === 0) {
-    console.warn("DONNA: no active modules after load — resetting to default config");
-    resetConfigToDefault({ persist: true, notify: false, keepOnboarding: true });
-    buildNav();
-  }
   const tab = firstActiveTab();
   currentTab = tab || "overview";
   setTab(currentTab, { silent: true });
+  return true;
+}
+
+function initDashboard() {
+  ensureValidConfig();
+  buildNav();
+  const healed = selfHealTabs();
+  if (!healed) {
+    const tab = firstActiveTab();
+    currentTab = tab || "overview";
+    setTab(currentTab, { silent: true });
+  }
   updateIntegrationUI();
 }
 
