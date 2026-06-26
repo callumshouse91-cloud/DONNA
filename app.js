@@ -55,7 +55,9 @@ function buildNav() {
   nav.innerHTML = "";
   let lastGroup = null;
   getActiveModules().forEach(m => {
-    const ui = MODULE_UI[m.id] || {};
+    const ui = MODULE_UI[m.id] || {
+      icon: '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>',
+    };
     if (ui.group && ui.group !== lastGroup) {
       const lb = document.createElement("div");
       lb.className = "nav-label";
@@ -76,17 +78,48 @@ function buildNav() {
 
 function firstActiveTab() {
   const active = getActiveModules();
-  return active.length ? active[0].id : "overview";
+  return active.length ? active[0].id : null;
 }
-
-buildNav();
 
 function isLiveSource() { return DATA_SOURCE === "smartsheet"; }
 
+function cardHintFor(moduleId, cardId) {
+  const c = (CONFIG.CARDS[moduleId] || []).find(x => x.id === cardId);
+  return cardHintBtn(c?.hint);
+}
+
+function renderGenericCard(card) {
+  if (!card.inputKey) return "";
+  const val = inp(card.inputKey);
+  let display = "—";
+  if (typeof val === "number") {
+    display = card.inputKey.includes("billing") || card.inputKey.toLowerCase().includes("cost") ? gbp(val) : num(val);
+  } else if (Array.isArray(val)) display = String(val.length);
+  else if (val != null) display = String(val);
+  return `<div class="card kpi card-enter">
+    ${kpiChrome(card.id)}
+    <div class="kpi-label">${card.label} ${cardHintBtn(card.hint)}</div>
+    <div class="kpi-value grad">${display}</div>
+    <div class="kpi-meta">Mapped to <code>${card.inputKey}</code></div>
+  </div>`;
+}
+
+function renderCustomModule(moduleId) {
+  const mod = getModule(moduleId);
+  const cards = getModuleCards(moduleId).filter(cardVisibleForSource);
+  const kpis = cards.filter(c => c.section === "kpi");
+  const kpiHtml = kpis.length
+    ? kpis.map(c => c.builtin ? "" : renderGenericCard(c)).filter(Boolean).join("")
+    : `<div class="empty-state card">No cards yet — open <b>Calibrate</b> to add a metric card to this module.</div>`;
+  return `
+    ${pageHead(moduleId, mod?.label || "Custom", "view", mod?.help?.whatItIs || "A view you configured in Calibrate.")}
+    <div class="grid layout-grid kpis" style="--kpi-cols:${isLiveSource() ? 3 : 2}">${kpiHtml}</div>`;
+}
+
 function setTab(id, opts = {}) {
-  const enabled = getActiveModules().some(m => m.id === id);
+  const enabled = id && getActiveModules().some(m => m.id === id);
   if (!enabled) id = firstActiveTab();
-  currentTab = id;
+  currentTab = id || "";
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
   document.querySelectorAll(".nav-item .pill").forEach(p => {
     const tabId = p.closest(".nav-item")?.dataset.tab;
@@ -94,7 +127,13 @@ function setTab(id, opts = {}) {
     if (ui?.pill) p.textContent = ui.pill();
   });
   const viewEl = document.getElementById("view");
-  viewEl.innerHTML = VIEWS[id]();
+  if (!id) {
+    viewEl.innerHTML = `<div class="empty-state card">No modules enabled — open <b>Calibrate</b> to turn a tab on.</div>`;
+    return;
+  }
+  const render = VIEWS[id] || (() => renderCustomModule(id));
+  viewEl.innerHTML = render();
+  wireCardHints(viewEl);
   if (opts.sourceFadeIn) viewEl.classList.add("source-fade-in");
   if (id === "arch") wireArchitecture(opts.restartFlows);
   wireViewChrome(id, opts);
@@ -213,14 +252,8 @@ function restartFlowAnimation() {
 }
 
 /* ---------------- shared fragments ---------------- */
-const head = (t, accent, desc) => `
-  <div class="page-head">
-    <h1 class="page-title">${t} <span class="accent">${accent}</span></h1>
-    <p class="page-desc">${desc}</p>
-  </div>`;
-
-const cardTitle = (t, right = "") =>
-  `<div class="card-title"><span class="tick"></span>${t}${right ? `<span class="right">${right}</span>` : ""}</div>`;
+const cardTitle = (t, right = "", hint = "") =>
+  `<div class="card-title"><span class="tick"></span>${t}${hint}${right ? `<span class="right">${right}</span>` : ""}</div>`;
 
 const sevBadge = s => s === "high" ? '<span class="badge red">High</span>'
                   : s === "med"  ? '<span class="badge amber">Medium</span>'
@@ -258,7 +291,7 @@ const OVERVIEW_CARDS = {
   workforceCurrent(d) {
     return `<div class="card kpi card-enter">
       ${kpiChrome("workforceCurrent")}
-      <div class="kpi-label">Users consuming TSA</div>
+      <div class="kpi-label">Users consuming TSA ${cardHintFor("overview", "workforceCurrent")}</div>
       <div class="kpi-value grad" data-kpi-nudge data-base="${d.wCurrent}" data-bump="${d.wCurrent + 2}" data-fmt="num">${num(d.wCurrent)}</div>
       <div class="kpi-meta">vs commitment ${num(d.baseline)} · <b class="${commitmentRagClass(d.commitPct)}">+${d.above} above</b></div>
     </div>`;
@@ -266,7 +299,7 @@ const OVERVIEW_CARDS = {
   billingOutTsa(d) {
     return `<div class="card kpi card-enter">
       ${kpiChrome("billingOutTsa")}
-      <div class="kpi-label">Chargeable outside base</div>
+      <div class="kpi-label">Chargeable outside base ${cardHintFor("overview", "billingOutTsa")}</div>
       <div class="kpi-value" data-kpi-nudge data-base="${d.outTsa}" data-bump="${d.outTsa + 340}" data-fmt="gbp">${gbp(d.outTsa)}</div>
       <div class="kpi-meta">${getCal("reportingPeriod")} invoice · 4 charge categories</div>
     </div>`;
@@ -323,8 +356,16 @@ const VIEWS = {
   overview() {
     const d = overviewData();
     const layout = getSourceLayout();
-    const kpiHtml = layout.kpi.cards.map(id => OVERVIEW_CARDS[id](d)).join("");
-    const secHtml = layout.secondary.cards.map(id => OVERVIEW_CARDS[id](d)).join("");
+    const filterId = id => {
+      const c = CONFIG.CARDS.overview?.find(x => x.id === id);
+      return !c || (c.enabled !== false && cardVisibleForSource(c));
+    };
+    const kpiHtml = layout.kpi.cards.filter(filterId).map(id => {
+      const def = CONFIG.CARDS.overview?.find(c => c.id === id);
+      if (def && !def.builtin && def.inputKey) return renderGenericCard(def);
+      return OVERVIEW_CARDS[id] ? OVERVIEW_CARDS[id](d) : "";
+    }).join("");
+    const secHtml = layout.secondary.cards.filter(filterId).map(id => OVERVIEW_CARDS[id] ? OVERVIEW_CARDS[id](d) : "").join("");
     const exceptionsHtml = layout.showExceptions ? `
     <div class="card mt card-enter">
       ${cardTitle("Exceptions requiring action", "auto-detected across systems")}
@@ -340,7 +381,7 @@ const VIEWS = {
       </table>
     </div>` : "";
     return `
-    ${head("TSA position", "at a glance", `One trusted view across SuccessFactors, MSP onboarding, HAM, SAM, ServiceNow, Smartsheet and Finance — what's happening, what's changed, what's chargeable and what needs action for the Reckitt ↔ Vestacy separation.`)}
+    ${pageHead("overview", "TSA position", "at a glance", `One trusted view across SuccessFactors, MSP onboarding, HAM, SAM, ServiceNow, Smartsheet and Finance — what's happening, what's changed, what's chargeable and what needs action for the Reckitt ↔ Vestacy separation.`)}
 
     <div class="grid layout-grid kpis" style="--kpi-cols:${layout.kpi.cols}">${kpiHtml}</div>
 
@@ -357,7 +398,7 @@ const VIEWS = {
     const commitPct = commitmentPct(wCurrent, baseline);
     const rag = commitmentRagClass(commitPct);
     return `
-    ${head("Workforce", "vs TSA commitment", `SuccessFactors (permanent) joined with MSP onboarding data (contingent) to show who is consuming TSA services — and whether each joiner is a replacement hire or net new against the baseline.`)}
+    ${pageHead("workforce", "Workforce", "vs TSA commitment", `SuccessFactors (permanent) joined with MSP onboarding data (contingent) to show who is consuming TSA services — and whether each joiner is a replacement hire or net new against the baseline.`)}
 
     <div class="grid layout-grid kpis" style="--kpi-cols:${isLiveSource() ? 3 : 2}">
       <div class="card kpi card-enter">${kpiChrome("workforceCurrent")}<div class="kpi-label">Current users</div><div class="kpi-value grad">${num(wCurrent)}</div>
@@ -419,7 +460,7 @@ const VIEWS = {
     const mix = inp("hardwareMix");
     const check = v => v ? "✓" : "—";
     return `
-    ${head("EUC &", "hardware", `HAM allocation joined to onboarding records: who received a laptop, who is BYOD, whether the device is Reckitt- or Vestacy-provided, and where a charge should apply. The validation view below replaces the manual check Murphy runs today.`)}
+    ${pageHead("hardware", "EUC &", "hardware", `HAM allocation joined to onboarding records: who received a laptop, who is BYOD, whether the device is Reckitt- or Vestacy-provided, and where a charge should apply. The validation view below replaces the manual check Murphy runs today.`)}
 
     <div class="grid kpis">
       <div class="card kpi"><div class="kpi-label">Laptops issued</div><div class="kpi-value">${num(inp("hardwareLaptopsIssued"))}</div><div class="kpi-meta">Reckitt-provided estate</div></div>
@@ -469,7 +510,7 @@ const VIEWS = {
     const pendingCount = inp("softwareItems").filter(it => it.approved === "Pending").length;
     const pendingWarn = pendingCount >= getCal("software.pendingApprovalWarn");
     return `
-    ${head("Software &", "licensing", `SAM allocation classified against the TSA catalogue: standard provision, right-to-use continuations, and non-standard requests with their approval status and cost impact — by month and cumulatively.`)}
+    ${pageHead("software", "Software &", "licensing", `SAM allocation classified against the TSA catalogue: standard provision, right-to-use continuations, and non-standard requests with their approval status and cost impact — by month and cumulatively.`)}
 
     <div class="grid kpis">
       <div class="card kpi"><div class="kpi-label">Standard (in TSA)</div><div class="kpi-value">${gbp(inp("softwareStandardCost"))}</div><div class="kpi-meta">No additional charge</div></div>
@@ -518,7 +559,7 @@ const VIEWS = {
     const agedDays = getCal("service.agedItemDays");
     const agedWarn = aged >= getCal("service.agedWarnCount");
     return `
-    ${head("Service", "activity", `ServiceNow summarised for the month: incidents, service requests and demand, resolution performance, aged items and recurring issues — with the month-on-month movement the governance call needs.`)}
+    ${pageHead("service", "Service", "activity", `ServiceNow summarised for the month: incidents, service requests and demand, resolution performance, aged items and recurring issues — with the month-on-month movement the governance call needs.`)}
 
     <div class="grid kpis">
       <div class="card kpi"><div class="kpi-label">Incidents (${getCal("reportingPeriod")})</div><div class="kpi-value">${inp("serviceIncidents")}</div><div class="kpi-meta"><b class="up">▼ 3.7%</b> vs prior month</div></div>
@@ -566,7 +607,7 @@ const VIEWS = {
     const open = rows.filter(r => r.stage !== "Approved").length;
     const outside = rows.filter(r => r.scope === "Outside TSA");
     return `
-    ${head("Demand &", "approvals", `Demand raised during the TSA period — whether it arrives via ServiceNow, Smartsheet or legacy Excel templates — tracked through approval with cost and TSA-scope flags, ready for monthly governance.`)}
+    ${pageHead("demand", "Demand &", "approvals", `Demand raised during the TSA period — whether it arrives via ServiceNow, Smartsheet or legacy Excel templates — tracked through approval with cost and TSA-scope flags, ready for monthly governance.`)}
 
     <div class="grid kpis">
       <div class="card kpi"><div class="kpi-label">New demands (${getCal("reportingPeriod")})</div><div class="kpi-value">${rows.length}</div><div class="kpi-meta">3 sources, one register</div></div>
@@ -599,7 +640,7 @@ const VIEWS = {
     const outPct = bTotal ? ((outTsa / bTotal) * 100).toFixed(1) : 0;
     const outWarn = parseFloat(outPct) >= getCal("billing.outTsaWarnPct");
     return `
-    ${head("Billing &", "exceptions", `Every invoice line matched back to the user, asset, licence or demand that evidences it — separating the base TSA charge from chargeable activity, with market and cost-centre cuts for reporting.`)}
+    ${pageHead("billing", "Billing &", "exceptions", `Every invoice line matched back to the user, asset, licence or demand that evidences it — separating the base TSA charge from chargeable activity, with market and cost-centre cuts for reporting.`)}
 
     <div class="grid kpis">
       <div class="card kpi"><div class="kpi-label">${getCal("reportingPeriod")} invoice total</div><div class="kpi-value">${gbp(bTotal)}</div><div class="kpi-meta">All TSA services</div></div>
@@ -658,7 +699,7 @@ const VIEWS = {
     const narrative = inp("reportNarrative");
     const actions = inp("reportActions");
     return `
-    ${head("Monthly TSA", "report", `DONNA assembles the monthly pack — performance summary, service and billing positions, workforce vs commitment, exceptions and actions — and drafts the narrative for the Reckitt ↔ Vestacy governance call. Humans review; nothing is sent unchecked.`)}
+    ${pageHead("report", "Monthly TSA", "report", `DONNA assembles the monthly pack — performance summary, service and billing positions, workforce vs commitment, exceptions and actions — and drafts the narrative for the Reckitt ↔ Vestacy governance call. Humans review; nothing is sent unchecked.`)}
 
     <div class="grid cols-2">
       <div class="card">
@@ -700,7 +741,7 @@ const VIEWS = {
   /* ===== ARCHITECTURE ===== */
   arch() {
     return `
-    ${head("How DONNA", "is wired", `The intelligence layer sits above the run systems — it doesn't replace them. Seven sources land into one model, identity resolution links people to everything they consume, the TSA rules engine decides what's chargeable, and the AI layer drafts the narrative. Click any source to see its feed.`)}
+    ${pageHead("arch", "How DONNA", "is wired", `The intelligence layer sits above the run systems — it doesn't replace them. Seven sources land into one model, identity resolution links people to everything they consume, the TSA rules engine decides what's chargeable, and the AI layer drafts the narrative. Click any source to see its feed.`)}
 
     <div class="arch-wrap">
       <div class="card arch-svg-card"><div id="archSvg"></div></div>
@@ -876,144 +917,6 @@ onDataSourceChange(() => {
   switchSourceView();
 });
 
-/* ---------------- calibration panel ---------------- */
-const calPanel = document.getElementById("calPanel");
-const calBackdrop = document.getElementById("calBackdrop");
-const calBody = document.getElementById("calBody");
-let calPanelOpen = false;
-
-const CAL_FIELDS = [
-  { path: "workforce.commitmentAmberPct", label: "Commitment amber (%)", min: 95, max: 105, step: 1 },
-  { path: "workforce.commitmentRedPct",   label: "Commitment red (%)",   min: 98, max: 110, step: 1 },
-  { path: "workforce.replacementWindowDays", label: "Replacement window (days)", min: 30, max: 90, step: 5 },
-  { path: "service.slaTargetPct", label: "SLA target (%)", min: 80, max: 100, step: 1 },
-  { path: "service.slaAmberPct",  label: "SLA amber (%)",  min: 70, max: 99, step: 1 },
-  { path: "service.agedItemDays", label: "Aged item threshold (days)", min: 5, max: 40, step: 1 },
-  { path: "service.agedWarnCount", label: "Aged items warn count", min: 5, max: 30, step: 1 },
-  { path: "hardware.pendingWarnCount", label: "HW pending warn count", min: 1, max: 20, step: 1 },
-  { path: "hardware.deviceCharge", label: "Device charge (£)", min: 400, max: 800, step: 10 },
-  { path: "software.pendingApprovalWarn", label: "SW pending approval warn", min: 1, max: 5, step: 1 },
-  { path: "billing.outTsaWarnPct", label: "Out-of-TSA warn (%)", min: 5, max: 20, step: 0.5 },
-];
-
-function setCal(path, value) {
-  const parts = path.split(".");
-  let obj = CONFIG.CALIBRATION;
-  for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
-  obj[parts[parts.length - 1]] = value;
-}
-
-function moveModule(id, dir) {
-  const sorted = [...CONFIG.MODULES].sort((a, b) => a.order - b.order);
-  const idx = sorted.findIndex(m => m.id === id);
-  const swap = idx + dir;
-  if (swap < 0 || swap >= sorted.length) return;
-  const a = sorted[idx].order, b = sorted[swap].order;
-  sorted[idx].order = b;
-  sorted[swap].order = a;
-  notifyConfigChange();
-}
-
-function renderCalPanel() {
-  const sorted = [...CONFIG.MODULES].sort((a, b) => a.order - b.order);
-  const modulesHtml = sorted.map((m, i) => `
-    <div class="cal-module" data-id="${m.id}">
-      <label><input type="checkbox" data-mod-enable="${m.id}" ${m.enabled ? "checked" : ""}> ${m.label}</label>
-      <div class="cal-order">
-        <button type="button" data-mod-up="${m.id}" ${i === 0 ? "disabled" : ""} title="Move up">↑</button>
-        <button type="button" data-mod-down="${m.id}" ${i === sorted.length - 1 ? "disabled" : ""} title="Move down">↓</button>
-      </div>
-    </div>`).join("");
-
-  const inputsHtml = CONFIG.INPUTS.map(inp => `
-    <tr>
-      <td><code>${inp.key}</code></td>
-      <td>${inp.label}</td>
-      <td><input type="text" data-input-key="${inp.key}" value="${inp.sourceField}"></td>
-    </tr>`).join("");
-
-  const calHtml = CAL_FIELDS.map(f => {
-    const val = getCal(f.path);
-    return `
-    <div class="cal-field" data-cal="${f.path}">
-      <label>${f.label}</label>
-      <input type="range" data-cal-range="${f.path}" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}">
-      <input type="number" data-cal-num="${f.path}" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}">
-    </div>`;
-  }).join("");
-
-  calBody.innerHTML = `
-    <div class="cal-section">
-      <div class="cal-section-title">Modules</div>
-      ${modulesHtml}
-    </div>
-    <div class="cal-section">
-      <div class="cal-section-title">Input mapping · Excel fields</div>
-      <table class="cal-table">
-        <tr><th>Key</th><th>Metric</th><th>Source field</th></tr>
-        ${inputsHtml}
-      </table>
-    </div>
-    <div class="cal-section">
-      <div class="cal-section-title">Calibration thresholds</div>
-      ${calHtml}
-    </div>`;
-}
-
-function openCalPanel() {
-  calPanelOpen = true;
-  renderCalPanel();
-  calPanel.classList.add("open");
-  calBackdrop.classList.add("open");
-}
-
-function closeCalPanel() {
-  calPanelOpen = false;
-  calPanel.classList.remove("open");
-  calBackdrop.classList.remove("open");
-}
-
-document.getElementById("calibrateBtn").addEventListener("click", openCalPanel);
-document.getElementById("calClose").addEventListener("click", closeCalPanel);
-calBackdrop.addEventListener("click", closeCalPanel);
-
-calBody.addEventListener("change", e => {
-  const enable = e.target.dataset.modEnable;
-  if (enable) {
-    const mod = CONFIG.MODULES.find(m => m.id === enable);
-    if (mod) mod.enabled = e.target.checked;
-    notifyConfigChange();
-    return;
-  }
-  const inputKey = e.target.dataset.inputKey;
-  if (inputKey) {
-    const entry = CONFIG.INPUTS.find(i => i.key === inputKey);
-    if (entry) entry.sourceField = e.target.value;
-  }
-});
-
-calBody.addEventListener("input", e => {
-  const path = e.target.dataset.calRange || e.target.dataset.calNum;
-  if (!path) return;
-  const val = parseFloat(e.target.value);
-  if (Number.isNaN(val)) return;
-  setCal(path, val);
-  const pair = calBody.querySelector(
-    e.target.dataset.calRange ? `[data-cal-num="${path}"]` : `[data-cal-range="${path}"]`
-  );
-  if (pair) pair.value = val;
-  applyConfig();
-});
-
-calBody.addEventListener("click", e => {
-  const up = e.target.dataset.modUp;
-  const down = e.target.dataset.modDown;
-  if (up) moveModule(up, -1);
-  if (down) moveModule(down, 1);
-});
-
-onConfigChange(() => applyConfig());
-
 /* ---------------- easter egg ---------------- */
 let brandClicks = 0, brandTimer;
 document.getElementById("brand").addEventListener("click", () => {
@@ -1030,6 +933,11 @@ document.getElementById("brand").addEventListener("click", () => {
 });
 
 /* ---------------- boot ---------------- */
-document.body.classList.add("source-excel");
+document.body.classList.add(`source-${DATA_SOURCE}`);
+wireHelpUi();
+wireCalibrateUi();
+calBackdrop.addEventListener("click", closeCalPanel);
 updateSourceUI();
+buildNav();
 setTab("overview");
+showWelcomeIfNeeded();

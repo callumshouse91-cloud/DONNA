@@ -1,168 +1,252 @@
 /* ============================================================
-   DONNA · single configuration surface
-   Modules, Excel input mappings, and calibration thresholds.
-   Edit here (or in-session via the Calibrate panel) — not in views.
+   DONNA · configuration runtime, persistence & API
    ============================================================ */
 
-const CONFIG = {
-  MODULES: [
-    { id: "overview",  label: "Overview",             enabled: true,  order: 1 },
-    { id: "workforce", label: "Workforce vs TSA",     enabled: true,  order: 2 },
-    { id: "hardware",  label: "EUC & Hardware",       enabled: true,  order: 3 },
-    { id: "software",  label: "Software & Licensing", enabled: true,  order: 4 },
-    { id: "service",   label: "Service Activity",     enabled: true,  order: 5 },
-    { id: "demand",    label: "Demand & Approvals",   enabled: true,  order: 6 },
-    { id: "billing",   label: "Billing & Exceptions", enabled: true,  order: 7 },
-    { id: "report",    label: "Monthly Report",       enabled: true,  order: 8 },
-    { id: "arch",      label: "Architecture",         enabled: true,  order: 9 },
-  ],
+const STORAGE_KEY = "donna-config-v1";
 
-  INPUTS: [
-    { key: "months",                  label: "Reporting months",           sourceField: "RPT_Months",           source: "excel", dataPath: "months" },
-    { key: "tsaBaseline",             label: "TSA user commitment",        sourceField: "TSA_Baseline_Users",   source: "excel", dataPath: "tsa.baseline" },
-    { key: "tsaCostPerUser",          label: "Cost per user (£/mo)",       sourceField: "TSA_Cost_Per_User",    source: "excel", dataPath: "tsa.costPerUser" },
-    { key: "tsaEndDate",              label: "TSA end date",               sourceField: "TSA_End_Date",         source: "excel", dataPath: "tsa.endDate" },
-    { key: "workforceCurrent",        label: "Users consuming TSA",        sourceField: "WS_Current_Users",     source: "excel", dataPath: "workforce.current" },
-    { key: "workforcePermanent",      label: "Permanent headcount",        sourceField: "WS_Permanent",         source: "excel", dataPath: "workforce.permanent" },
-    { key: "workforceContingent",     label: "Contingent headcount",       sourceField: "WS_Contingent",        source: "excel", dataPath: "workforce.contingent" },
-    { key: "workforceJoiners",        label: "Joiners (month)",            sourceField: "WS_Joiners",           source: "excel", dataPath: "workforce.joiners" },
-    { key: "workforceLeavers",        label: "Leavers (month)",            sourceField: "WS_Leavers",           source: "excel", dataPath: "workforce.leavers" },
-    { key: "workforceReplacements",   label: "Replacement hires",          sourceField: "WS_Replacements",      source: "excel", dataPath: "workforce.replacements" },
-    { key: "workforceNetNew",         label: "Net-new joiners",            sourceField: "WS_Net_New",           source: "excel", dataPath: "workforce.netNew" },
-    { key: "workforceAboveBaseline",  label: "Users above commitment",     sourceField: "WS_Above_Baseline",    source: "excel", dataPath: "workforce.aboveBaseline" },
-    { key: "workforceTrendUsers",     label: "User trend series",          sourceField: "WS_Trend_Users",       source: "excel", dataPath: "workforce.trend.users" },
-    { key: "workforceTrendBaseline",  label: "Baseline trend series",      sourceField: "WS_Trend_Baseline",    source: "excel", dataPath: "workforce.trend.baseline" },
-    { key: "workforceTrendJoiners",   label: "Joiner trend series",        sourceField: "WS_Trend_Joiners",     source: "excel", dataPath: "workforce.trend.joiners" },
-    { key: "workforceTrendLeavers",   label: "Leaver trend series",        sourceField: "WS_Trend_Leavers",     source: "excel", dataPath: "workforce.trend.leavers" },
-    { key: "workforceMovers",         label: "Movement register",          sourceField: "WS_Movers",            source: "excel", dataPath: "workforce.movers" },
-    { key: "hardwareLaptopsIssued",   label: "Laptops issued",             sourceField: "HW_Laptops_Issued",    source: "excel", dataPath: "hardware.laptopsIssued" },
-    { key: "hardwareByod",            label: "BYOD users",                 sourceField: "HW_BYOD",              source: "excel", dataPath: "hardware.byod" },
-    { key: "hardwarePendingRequests", label: "Pending HW requests",        sourceField: "HW_Pending",           source: "excel", dataPath: "hardware.pendingRequests" },
-    { key: "hardwareChargeableMonth", label: "Chargeable devices (month)", sourceField: "HW_Chargeable_Mo",     source: "excel", dataPath: "hardware.chargeableThisMonth" },
-    { key: "hardwareMix",             label: "Estate mix breakdown",       sourceField: "HW_Mix",               source: "excel", dataPath: "hardware.mix" },
-    { key: "hardwareValidation",      label: "Onboarding ↔ HW validation", sourceField: "HW_Reconciled",        source: "excel", dataPath: "hardware.validation" },
-    { key: "softwareStandardCost",    label: "Standard software cost",     sourceField: "SW_Standard_Cost",     source: "excel", dataPath: "software.standardCost" },
-    { key: "softwareNonStandardCost", label: "Non-standard cost (month)",  sourceField: "SW_NonStd_Cost",       source: "excel", dataPath: "software.nonStandardCost" },
-    { key: "softwareCumulative",      label: "Cumulative non-standard",    sourceField: "SW_NonStd_Cum",        source: "excel", dataPath: "software.cumulativeNonStandard" },
-    { key: "softwareTrendNonStd",     label: "Non-standard trend",         sourceField: "SW_NonStd_Trend",      source: "excel", dataPath: "software.trend.nonStandard" },
-    { key: "softwareItems",           label: "Software register",          sourceField: "SW_Register",          source: "excel", dataPath: "software.items" },
-    { key: "serviceIncidents",        label: "Incidents (month)",          sourceField: "SVC_Incidents",        source: "excel", dataPath: "service.incidents" },
-    { key: "serviceRequests",         label: "Service requests (month)",   sourceField: "SVC_Requests",         source: "excel", dataPath: "service.requests" },
-    { key: "serviceResolvedInSla",    label: "Resolved within SLA",        sourceField: "SVC_SLA_Pct",          source: "excel", dataPath: "service.resolvedInSla" },
-    { key: "serviceOpen",             label: "Open items",                 sourceField: "SVC_Open",             source: "excel", dataPath: "service.open" },
-    { key: "serviceAged",             label: "Aged items",                 sourceField: "SVC_Aged",             source: "excel", dataPath: "service.aged" },
-    { key: "serviceTrendIncidents",   label: "Incident trend",             sourceField: "SVC_Trend_Inc",        source: "excel", dataPath: "service.trend.incidents" },
-    { key: "serviceTrendRequests",    label: "Request trend",              sourceField: "SVC_Trend_Req",        source: "excel", dataPath: "service.trend.requests" },
-    { key: "serviceTrendAged",        label: "Aged trend",                 sourceField: "SVC_Trend_Aged",       source: "excel", dataPath: "service.trend.aged" },
-    { key: "serviceRecurring",        label: "Recurring issue clusters",   sourceField: "SVC_Recurring",        source: "excel", dataPath: "service.recurring" },
-    { key: "demandRows",              label: "Demand register rows",       sourceField: "DMD_Register",         source: "excel", dataPath: "demand.rows" },
-    { key: "billingMonthTotal",       label: "Invoice total (month)",      sourceField: "FIN_Month_Total",      source: "excel", dataPath: "billing.monthTotal" },
-    { key: "billingInTsa",            label: "Base TSA charge",            sourceField: "FIN_In_TSA",           source: "excel", dataPath: "billing.inTsa" },
-    { key: "billingOutTsa",           label: "Chargeable outside base",    sourceField: "FIN_Out_TSA",          source: "excel", dataPath: "billing.outTsa" },
-    { key: "billingLines",            label: "Invoice line items",         sourceField: "FIN_Lines",            source: "excel", dataPath: "billing.lines" },
-    { key: "billingMarkets",          label: "Market breakdown",           sourceField: "FIN_Markets",          source: "excel", dataPath: "billing.markets" },
-    { key: "exceptions",              label: "Exception log",              sourceField: "EXC_Log",              source: "excel", dataPath: "exceptions" },
-    { key: "reportNarrative",         label: "Monthly narrative",          sourceField: "RPT_Narrative",        source: "excel", dataPath: "report.narrative" },
-    { key: "reportActions",           label: "Governance actions",         sourceField: "RPT_Actions",          source: "excel", dataPath: "report.actions" },
-    { key: "architecture",            label: "Architecture model",         sourceField: "ARCH_Model",           source: "excel", dataPath: "architecture" },
-  ],
+let CONFIG = deepClone(DEFAULT_CONFIG);
+let _onboardingDismissed = false;
+let _onConfigChange = null;
 
-  CALIBRATION: {
-    reportingPeriod: "May 2026",
-    chartRangeLabel: "Jan – May 2026",
-    workforce: {
-      commitmentAmberPct: 100,
-      commitmentRedPct: 102,
-      replacementWindowDays: 60,
-    },
-    service: {
-      slaTargetPct: 94,
-      slaAmberPct: 90,
-      agedItemDays: 20,
-      agedWarnCount: 15,
-    },
-    hardware: {
-      pendingWarnCount: 10,
-      deviceCharge: 612,
-    },
-    software: {
-      pendingApprovalWarn: 2,
-    },
-    billing: {
-      outTsaWarnPct: 10,
-    },
-  },
+function deepClone(o) {
+  return JSON.parse(JSON.stringify(o));
+}
 
-  /** Per-source dashboard layout — card set and grid density change on toggle. */
-  LAYOUT: {
-    excel: {
-      lastUpload: "14 May 2026, 09:42",
-      kpi: {
-        cols: 2,
-        cards: ["workforceCurrent", "billingOutTsa", "serviceSla", "exceptionsCount"],
-      },
-      secondary: {
-        cols: 2,
-        cards: ["consumptionChart", "monthSummary"],
-      },
-      manualTags: ["workforceCurrent", "billingOutTsa"],
-      showExceptions: true,
-    },
-    smartsheet: {
-      kpi: {
-        cols: 3,
-        cards: ["liveSync", "workforceCurrent", "billingOutTsa", "serviceSla", "exceptionsCount", "connectedSheets"],
-      },
-      secondary: {
-        cols: 3,
-        cards: ["consumptionChart", "monthSummary", "recentChanges"],
-      },
-      manualTags: [],
-      showExceptions: true,
-    },
-  },
+function deepMerge(base, patch) {
+  if (!patch || typeof patch !== "object") return base;
+  const out = Array.isArray(base) ? [...base] : { ...base };
+  Object.keys(patch).forEach(k => {
+    if (patch[k] && typeof patch[k] === "object" && !Array.isArray(patch[k]) && base[k] && typeof base[k] === "object" && !Array.isArray(base[k])) {
+      out[k] = deepMerge(base[k], patch[k]);
+    } else if (patch[k] !== undefined) {
+      out[k] = patch[k];
+    }
+  });
+  return out;
+}
 
-  /** Smartsheet-only feed mock (not in Excel export). */
-  SMARTSHEET_FEED: {
-    connectedSheets: 12,
-    activity: [
-      { who: "D. Marsh",   what: "Moved DMD-0042 to In review",           ago: "2m ago" },
-      { who: "Murphy",     what: "Validated HW row for P. Mehta",          ago: "8m ago" },
-      { who: "L. Brandt",  what: "Updated Tableau approval status",        ago: "14m ago" },
-      { who: "Donna M.",   what: "Flagged 38-user overage for June GovCo", ago: "22m ago" },
-      { who: "B. Kowalski",what: "Added DMD-0044 from Excel register",     ago: "31m ago" },
-    ],
-  },
-};
+function loadPersistedConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved && saved.config && typeof saved.config === "object") {
+      CONFIG = deepMerge(deepClone(DEFAULT_CONFIG), saved.config);
+    }
+    if (saved.activeSource === "excel" || saved.activeSource === "smartsheet") {
+      DATA_SOURCE = saved.activeSource;
+    }
+    if (saved.onboardingDismissed) _onboardingDismissed = true;
+  } catch (_) {
+    CONFIG = deepClone(DEFAULT_CONFIG);
+  }
+}
 
-/** Resolve a configured input key → value from getData(). */
+function savePersistedConfig() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      version: 1,
+      config: CONFIG,
+      activeSource: DATA_SOURCE,
+      onboardingDismissed: _onboardingDismissed,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (_) { /* quota / private mode — degrade silently */ }
+}
+
+function resetToDefaultConfig() {
+  CONFIG = deepClone(DEFAULT_CONFIG);
+  DATA_SOURCE = "excel";
+  try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
+  savePersistedConfig();
+  notifyConfigChange();
+}
+
+function exportConfigFile() {
+  const blob = new Blob([JSON.stringify({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    activeSource: DATA_SOURCE,
+    config: CONFIG,
+  }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "donna-config.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function validateImportedConfig(data) {
+  if (!data || typeof data !== "object") return false;
+  const c = data.config || data;
+  if (!Array.isArray(c.MODULES) || !Array.isArray(c.INPUTS)) return false;
+  if (!c.CALIBRATION || !c.LAYOUT) return false;
+  return true;
+}
+
+function importConfigFile(file, onDone) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!validateImportedConfig(data)) {
+        onDone(false, "Invalid configuration file — missing required sections.");
+        return;
+      }
+      CONFIG = deepMerge(deepClone(DEFAULT_CONFIG), data.config || data);
+      if (data.activeSource === "excel" || data.activeSource === "smartsheet") {
+        DATA_SOURCE = data.activeSource;
+      }
+      savePersistedConfig();
+      notifyConfigChange();
+      onDone(true);
+    } catch (_) {
+      onDone(false, "Could not read file — check it is valid JSON.");
+    }
+  };
+  reader.readAsText(file);
+}
+
+function getModule(id) {
+  return CONFIG.MODULES.find(m => m.id === id);
+}
+
+function getModuleHelp(id) {
+  return getModule(id)?.help || {};
+}
+
+function getModuleCards(moduleId) {
+  return (CONFIG.CARDS[moduleId] || []).filter(c => c.enabled !== false).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+
+function getCardsForLayout(section, cardIds) {
+  const all = getModuleCards("overview");
+  const map = Object.fromEntries(all.map(c => [c.id, c]));
+  return cardIds.map(id => map[id]).filter(Boolean);
+}
+
+function cardVisibleForSource(card) {
+  if (!card.sources || card.sources.includes("both")) return true;
+  return card.sources.includes(DATA_SOURCE);
+}
+
+function slugId(label) {
+  const base = (label || "module").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "module";
+  let id = base, n = 1;
+  while (CONFIG.MODULES.some(m => m.id === id)) { id = `${base}_${n++}`; }
+  return id;
+}
+
+function validateModule(mod) {
+  if (!mod.label?.trim()) return "Module name is required.";
+  if (!mod.id?.trim()) return "Module id is required.";
+  if (CONFIG.MODULES.filter(m => m.id === mod.id).length > 1) return "Duplicate module id.";
+  return null;
+}
+
+function addModule({ label, whatItIs, whyItMatters, whatItsDoing, dataSourceNote }) {
+  const id = slugId(label);
+  const maxOrder = Math.max(0, ...CONFIG.MODULES.map(m => m.order || 0));
+  CONFIG.MODULES.push({
+    id, label: label.trim(), enabled: true, order: maxOrder + 1,
+    help: {
+      whatItIs: whatItIs || "Describe what this view shows.",
+      whyItMatters: whyItMatters || "Explain why this helps your team.",
+      whatItsDoing: whatItsDoing || "Describe how the numbers are calculated.",
+      dataSourceNote: dataSourceNote || "Link to input mappings in Calibrate.",
+      inputKeys: [],
+    },
+  });
+  CONFIG.CARDS[id] = CONFIG.CARDS[id] || [];
+  notifyConfigChange();
+  return id;
+}
+
+function removeModule(id) {
+  if (["overview"].includes(id)) return false;
+  CONFIG.MODULES = CONFIG.MODULES.filter(m => m.id !== id);
+  delete CONFIG.CARDS[id];
+  notifyConfigChange();
+  return true;
+}
+
+function addCard(moduleId, { label, inputKey, viz, hint, section }) {
+  const id = slugId(label);
+  const cards = CONFIG.CARDS[moduleId] || (CONFIG.CARDS[moduleId] = []);
+  const maxOrder = Math.max(-1, ...cards.map(c => c.order || 0));
+  const card = {
+    id, label: label.trim(), inputKey: inputKey || "", viz: viz || "kpi",
+    section: section || "kpi", sources: ["both"], order: maxOrder + 1, enabled: true,
+    hint: hint || "What this metric means and what good looks like.",
+  };
+  cards.push(card);
+  const layout = CONFIG.LAYOUT[DATA_SOURCE];
+  if (moduleId === "overview" && layout?.kpi && section === "kpi") {
+    layout.kpi.cards.push(id);
+  }
+  notifyConfigChange();
+  return id;
+}
+
+function removeCard(moduleId, cardId) {
+  const cards = CONFIG.CARDS[moduleId];
+  if (!cards) return;
+  CONFIG.CARDS[moduleId] = cards.filter(c => c.id !== cardId);
+  Object.keys(CONFIG.LAYOUT).forEach(src => {
+    ["kpi", "secondary"].forEach(sec => {
+      const list = CONFIG.LAYOUT[src]?.[sec]?.cards;
+      if (list) CONFIG.LAYOUT[src][sec].cards = list.filter(x => x !== cardId);
+    });
+  });
+  notifyConfigChange();
+}
+
+function addInput({ key, label, sourceField, smartsheetField, dataPath }) {
+  if (!key?.trim() || CONFIG.INPUTS.some(i => i.key === key)) return false;
+  CONFIG.INPUTS.push({
+    key: key.trim(), label: label?.trim() || key,
+    sourceField: sourceField || key.toUpperCase(),
+    smartsheetField: smartsheetField || key.toLowerCase(),
+    dataPath: dataPath || key,
+  });
+  notifyConfigChange();
+  return true;
+}
+
+function isOnboardingDismissed() { return _onboardingDismissed; }
+
+function dismissOnboarding() {
+  _onboardingDismissed = true;
+  savePersistedConfig();
+}
+
 function resolveInput(key) {
   const entry = CONFIG.INPUTS.find(i => i.key === key);
   if (!entry) return undefined;
   return entry.dataPath.split(".").reduce((o, p) => o?.[p], getData());
 }
 
-/** Dot-path read from CONFIG.CALIBRATION, e.g. getCal("service.slaTargetPct"). */
 function getCal(path) {
   return path.split(".").reduce((o, p) => o?.[p], CONFIG.CALIBRATION);
 }
 
-/** Enabled modules sorted by order. */
 function getActiveModules() {
   return CONFIG.MODULES.filter(m => m.enabled).sort((a, b) => a.order - b.order);
 }
 
-/** Layout definition for the active data source. */
 function getSourceLayout() {
   return CONFIG.LAYOUT[DATA_SOURCE] || CONFIG.LAYOUT.excel;
 }
 
-let _onConfigChange = null;
-
-function onConfigChange(fn) {
-  _onConfigChange = fn;
+function getInputFieldName(entry) {
+  return DATA_SOURCE === "smartsheet" ? (entry.smartsheetField || entry.sourceField) : entry.sourceField;
 }
+
+function onConfigChange(fn) { _onConfigChange = fn; }
 
 function notifyConfigChange() {
+  savePersistedConfig();
   if (typeof _onConfigChange === "function") _onConfigChange();
 }
+
+loadPersistedConfig();

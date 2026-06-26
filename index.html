@@ -44,7 +44,11 @@
     </div>
     <div class="topbar-right">
       <span class="connector-status" id="connectorStatus"></span>
-      <button type="button" class="calibrate-btn" id="calibrateBtn" title="Calibrate DONNA">
+      <button type="button" class="topbar-btn" id="guideBtn" title="How DONNA works">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 0 1 4.2 1.8c0 2-2.7 2.2-2.7 3.7"/><circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none"/></svg>
+        Guide
+      </button>
+      <button type="button" class="topbar-btn calibrate-btn" id="calibrateBtn" title="Calibrate DONNA">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
         Calibrate
       </button>
@@ -61,18 +65,50 @@
   <header class="cal-head">
     <div>
       <h2 class="cal-title">Calibrate</h2>
-      <p class="cal-sub">Configuration surface — changes apply instantly in-session</p>
+      <p class="cal-sub">Your configuration — saved automatically in this browser</p>
     </div>
     <button type="button" class="cal-close" id="calClose" aria-label="Close">&times;</button>
   </header>
   <div class="cal-body" id="calBody"></div>
 </aside>
 
+<div class="cal-backdrop" id="helpBackdrop"></div>
+<aside class="side-panel" id="guidePanel" aria-label="How DONNA works">
+  <header class="cal-head">
+    <div><h2 class="cal-title">Guide</h2><p class="cal-sub">How DONNA works — in plain language</p></div>
+    <button type="button" class="cal-close" id="guideClose" aria-label="Close">&times;</button>
+  </header>
+  <div class="cal-body" id="guidePanelBody"></div>
+</aside>
+<aside class="side-panel" id="helpPanel" aria-label="Page help">
+  <header class="cal-head">
+    <div><h2 class="cal-title">About this page</h2></div>
+    <button type="button" class="cal-close" id="helpClose" aria-label="Close">&times;</button>
+  </header>
+  <div class="cal-body" id="helpPanelBody"></div>
+</aside>
+
+<div class="welcome-modal" id="welcomeModal" role="dialog" aria-labelledby="welcomeTitle">
+  <div class="welcome-card">
+    <h2 id="welcomeTitle">Welcome to DONNA</h2>
+    <p>Make DONNA yours: read the <b>Guide</b>, open <b>Calibrate</b> to add modules, remap inputs and tune thresholds. Your changes save automatically in this browser.</p>
+    <ul>
+      <li>Click <b>ⓘ About this page</b> on any tab for plain-language help.</li>
+      <li>Toggle <b>Excel ↔ Smartsheet</b> to preview the future live layout.</li>
+      <li><b>Export</b> your setup from Calibrate to keep a portable copy.</li>
+    </ul>
+    <button type="button" class="cal-btn" id="welcomeDismiss">Got it — let me explore</button>
+  </div>
+</div>
+
 <div id="toast" class="toast" role="status"></div>
 
 <script src="data.js"></script>
+<script src="config-defaults.js"></script>
 <script src="config.js"></script>
 <script src="charts.js"></script>
+<script src="help.js"></script>
+<script src="calibrate.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -222,5 +222,6 @@ function setDataSource(source) {
   if (source !== "excel" && source !== "smartsheet") return;
   if (source === DATA_SOURCE) return;
   DATA_SOURCE = source;
+  if (typeof savePersistedConfig === "function") savePersistedConfig();
   if (typeof _onDataSourceChange === "function") _onDataSourceChange(source);
 }
