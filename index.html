@@ -44,6 +44,10 @@
     </div>
     <div class="topbar-right">
       <span class="connector-status" id="connectorStatus"></span>
+      <button type="button" class="calibrate-btn" id="calibrateBtn" title="Calibrate DONNA">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        Calibrate
+      </button>
       <span class="env-badge">DEMO · MOCK DATA</span>
       <div class="avatar" title="Donna · TSA Programme Lead">DM</div>
     </div>
@@ -52,9 +56,22 @@
   <section id="view" class="view"></section>
 </main>
 
+<div class="cal-backdrop" id="calBackdrop"></div>
+<aside class="cal-panel" id="calPanel" aria-label="DONNA calibration">
+  <header class="cal-head">
+    <div>
+      <h2 class="cal-title">Calibrate</h2>
+      <p class="cal-sub">Configuration surface — changes apply instantly in-session</p>
+    </div>
+    <button type="button" class="cal-close" id="calClose" aria-label="Close">&times;</button>
+  </header>
+  <div class="cal-body" id="calBody"></div>
+</aside>
+
 <div id="toast" class="toast" role="status"></div>
 
 <script src="data.js"></script>
+<script src="config.js"></script>
 <script src="charts.js"></script>
 <script src="app.js"></script>
 </body>

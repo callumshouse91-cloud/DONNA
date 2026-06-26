@@ -2,14 +2,26 @@
    DONNA · TSA Run & Control — app shell + views
    ============================================================ */
 
-const DATA = new Proxy({}, {
-  get(_, key) { return getData()[key]; },
-});
-
 const gbp = n => "£" + Math.abs(n).toLocaleString("en-GB") + (n < 0 ? " cr" : "");
 const num = n => n.toLocaleString("en-GB");
+const inp = resolveInput;
 
 let currentTab = "overview";
+
+function commitmentPct(current, baseline) {
+  return baseline ? (current / baseline) * 100 : 0;
+}
+function commitmentRagClass(pct) {
+  if (pct >= getCal("workforce.commitmentRedPct")) return "down";
+  if (pct >= getCal("workforce.commitmentAmberPct")) return "warn";
+  return "up";
+}
+function slaRagClass(pct) {
+  if (pct >= getCal("service.slaTargetPct")) return "up";
+  if (pct >= getCal("service.slaAmberPct")) return "warn";
+  return "down";
+}
+function isHighSeverity(sev) { return sev === "high"; }
 
 /* ---------------- icons (inline, feather-style) ---------------- */
 const I = {
@@ -24,53 +36,171 @@ const I = {
   arch:     '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="5.5" cy="6" r="2.2"/><circle cx="5.5" cy="18" r="2.2"/><circle cx="18.5" cy="12" r="2.2"/><path d="M7.5 6.8 16.4 11M7.5 17.2 16.4 13"/></svg>',
 };
 
-/* ---------------- navigation ---------------- */
-const TABS = [
-  { id: "overview",  label: "Overview",            icon: I.overview, group: "Run & Control" },
-  { id: "workforce", label: "Workforce vs TSA",    icon: I.workforce },
-  { id: "hardware",  label: "EUC & Hardware",      icon: I.hardware },
-  { id: "software",  label: "Software & Licensing",icon: I.software },
-  { id: "service",   label: "Service Activity",    icon: I.service },
-  { id: "demand",    label: "Demand & Approvals",  icon: I.demand },
-  { id: "billing",   label: "Billing & Exceptions",icon: I.billing, pill: () => DATA.exceptions.length },
-  { id: "report",    label: "Monthly Report",      icon: I.report, group: "Outputs" },
-  { id: "arch",      label: "Architecture",        icon: I.arch,   group: "How it's wired" },
-];
+/* ---------------- navigation (from CONFIG.MODULES) ---------------- */
+const MODULE_UI = {
+  overview:  { icon: I.overview, group: "Run & Control" },
+  workforce: { icon: I.workforce },
+  hardware:  { icon: I.hardware },
+  software:  { icon: I.software },
+  service:   { icon: I.service },
+  demand:    { icon: I.demand },
+  billing:   { icon: I.billing, pill: () => inp("exceptions").length },
+  report:    { icon: I.report, group: "Outputs" },
+  arch:      { icon: I.arch, group: "How it's wired" },
+};
 
 const nav = document.getElementById("nav");
-TABS.forEach(t => {
-  if (t.group) {
-    const lb = document.createElement("div");
-    lb.className = "nav-label"; lb.textContent = t.group;
-    nav.appendChild(lb);
-  }
-  const b = document.createElement("button");
-  b.className = "nav-item"; b.dataset.tab = t.id;
-  b.innerHTML = `${t.icon}<span class="txt">${t.label}</span>${t.pill ? `<span class="pill">${t.pill()}</span>` : ""}`;
-  b.onclick = () => setTab(t.id);
-  nav.appendChild(b);
-});
+
+function buildNav() {
+  nav.innerHTML = "";
+  let lastGroup = null;
+  getActiveModules().forEach(m => {
+    const ui = MODULE_UI[m.id] || {};
+    if (ui.group && ui.group !== lastGroup) {
+      const lb = document.createElement("div");
+      lb.className = "nav-label";
+      lb.textContent = ui.group;
+      nav.appendChild(lb);
+      lastGroup = ui.group;
+    }
+    const b = document.createElement("button");
+    b.className = "nav-item";
+    b.dataset.tab = m.id;
+    b.innerHTML = `${ui.icon || ""}<span class="txt">${m.label}</span>${ui.pill ? `<span class="pill">${ui.pill()}</span>` : ""}`;
+    b.onclick = () => setTab(m.id);
+    nav.appendChild(b);
+  });
+  const periodEl = document.querySelector(".period-pill strong");
+  if (periodEl) periodEl.textContent = getCal("reportingPeriod");
+}
+
+function firstActiveTab() {
+  const active = getActiveModules();
+  return active.length ? active[0].id : "overview";
+}
+
+buildNav();
+
+function isLiveSource() { return DATA_SOURCE === "smartsheet"; }
 
 function setTab(id, opts = {}) {
+  const enabled = getActiveModules().some(m => m.id === id);
+  if (!enabled) id = firstActiveTab();
   currentTab = id;
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
   document.querySelectorAll(".nav-item .pill").forEach(p => {
-    const tab = TABS.find(t => t.id === p.closest(".nav-item")?.dataset.tab);
-    if (tab?.pill) p.textContent = tab.pill();
+    const tabId = p.closest(".nav-item")?.dataset.tab;
+    const ui = MODULE_UI[tabId];
+    if (ui?.pill) p.textContent = ui.pill();
   });
-  document.getElementById("view").innerHTML = VIEWS[id]();
+  const viewEl = document.getElementById("view");
+  viewEl.innerHTML = VIEWS[id]();
+  if (opts.sourceFadeIn) viewEl.classList.add("source-fade-in");
   if (id === "arch") wireArchitecture(opts.restartFlows);
+  wireViewChrome(id, opts);
   if (!opts.silent) window.scrollTo({ top: 0 });
+}
+
+function applyConfig() {
+  buildNav();
+  setTab(currentTab, { restartFlows: currentTab === "arch", silent: true });
+  if (calPanelOpen) renderCalPanel();
+}
+
+function kpiChrome(cardId) {
+  const layout = getSourceLayout();
+  if (isLiveSource()) return `<span class="kpi-live-dot" title="Live feed"></span>`;
+  if (layout.manualTags?.includes(cardId)) {
+    const upload = layout.lastUpload || "Last upload";
+    return `<span class="source-tag manual">Manual entry · ${upload}</span>`;
+  }
+  return "";
+}
+
+let liveSyncInterval = null;
+
+function stopLiveSync() {
+  if (liveSyncInterval) { clearInterval(liveSyncInterval); liveSyncInterval = null; }
+}
+
+function wireLiveSync() {
+  stopLiveSync();
+  const el = document.getElementById("liveSyncStatus");
+  if (!el || !isLiveSource()) return;
+  let secs = 0;
+  const tick = () => {
+    el.textContent = secs === 0 ? "Auto-synced just now" : `Auto-synced ${secs}s ago`;
+    secs = secs >= 9 ? 0 : secs + 3;
+  };
+  tick();
+  liveSyncInterval = setInterval(tick, 3000);
+}
+
+function runKpiNudge() {
+  document.querySelectorAll("[data-kpi-nudge]").forEach(el => {
+    const base = el.dataset.base;
+    const bump = el.dataset.bump;
+    const fmt = el.dataset.fmt;
+    const show = v => fmt === "gbp" ? gbp(Number(v)) : fmt === "num" ? num(Number(v)) : v;
+    el.textContent = show(bump);
+    el.classList.add("kpi-nudge");
+    setTimeout(() => {
+      el.textContent = show(base);
+      setTimeout(() => el.classList.remove("kpi-nudge"), 400);
+    }, 550);
+  });
+}
+
+function wireViewChrome(tabId, opts = {}) {
+  if (DATA_SOURCE === "smartsheet") {
+    wireLiveSync();
+    if (opts.fromSourceSwitch) runKpiNudge();
+  } else {
+    stopLiveSync();
+  }
+  if (opts.sourceFadeIn) {
+    const viewEl = document.getElementById("view");
+    setTimeout(() => viewEl.classList.remove("source-fade-in"), 450);
+  }
+}
+
+function switchSourceView() {
+  const viewEl = document.getElementById("view");
+  viewEl.classList.add("source-fade-out");
+  setTimeout(() => {
+    viewEl.classList.remove("source-fade-out");
+    setTab(currentTab, {
+      restartFlows: true,
+      silent: true,
+      fromSourceSwitch: true,
+      sourceFadeIn: true,
+    });
+  }, 340);
 }
 
 function updateSourceUI() {
   const meta = getSourceMeta();
+  document.body.classList.remove("source-excel", "source-smartsheet");
+  document.body.classList.add(`source-${DATA_SOURCE}`);
   document.querySelectorAll(".source-seg").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.source === DATA_SOURCE);
+    const on = btn.dataset.source === DATA_SOURCE;
+    btn.classList.toggle("active", on);
+    const pill = btn.querySelector(".source-pill");
+    if (pill) {
+      if (btn.dataset.source === "smartsheet") {
+        pill.textContent = on ? "Live" : "Planned";
+        pill.classList.toggle("live", on);
+      }
+    }
   });
   const status = document.getElementById("connectorStatus");
   if (status) {
-    status.innerHTML = `Source: <b>${meta.label}</b> · ${meta.connector}`;
+    if (isLiveSource()) {
+      status.innerHTML = `Source: <b>${meta.label}</b> · <span class="live-dot" style="display:inline-block;vertical-align:-1px;margin-right:4px;width:7px;height:7px"></span>Live sync`;
+    } else {
+      const upload = getSourceLayout().lastUpload || "";
+      status.innerHTML = `Source: <b>${meta.label}</b> · ${meta.connector}${upload ? ` · ${upload}` : ""}`;
+    }
   }
 }
 
@@ -96,99 +226,169 @@ const sevBadge = s => s === "high" ? '<span class="badge red">High</span>'
                   : s === "med"  ? '<span class="badge amber">Medium</span>'
                   : '<span class="badge grey">Low</span>';
 
+const flaggedRow = sev => isHighSeverity(sev) ? "flagged" : "";
+
+function overviewData() {
+  const baseline = inp("tsaBaseline");
+  const wCurrent = inp("workforceCurrent");
+  const above = inp("workforceAboveBaseline");
+  const outTsa = inp("billingOutTsa");
+  const slaPct = Math.round(inp("serviceResolvedInSla") * 100);
+  const exceptions = inp("exceptions");
+  const commitPct = commitmentPct(wCurrent, baseline);
+  return { baseline, wCurrent, above, outTsa, slaPct, exceptions, commitPct };
+}
+
+const OVERVIEW_CARDS = {
+  liveSync() {
+    return `<div class="card kpi live-sync-card card-enter">
+      <div class="live-sync-head"><span class="live-dot"></span> Live Sync</div>
+      <div class="kpi-value live-on">ON</div>
+      <div class="kpi-meta live-sync-meta" id="liveSyncStatus">Auto-synced just now</div>
+    </div>`;
+  },
+  connectedSheets() {
+    return `<div class="card kpi card-enter">
+      ${kpiChrome("connectedSheets")}
+      <div class="kpi-label">Connected Sheets</div>
+      <div class="kpi-value grad">${CONFIG.SMARTSHEET_FEED.connectedSheets}</div>
+      <div class="kpi-meta">Demand · validation · governance</div>
+    </div>`;
+  },
+  workforceCurrent(d) {
+    return `<div class="card kpi card-enter">
+      ${kpiChrome("workforceCurrent")}
+      <div class="kpi-label">Users consuming TSA</div>
+      <div class="kpi-value grad" data-kpi-nudge data-base="${d.wCurrent}" data-bump="${d.wCurrent + 2}" data-fmt="num">${num(d.wCurrent)}</div>
+      <div class="kpi-meta">vs commitment ${num(d.baseline)} · <b class="${commitmentRagClass(d.commitPct)}">+${d.above} above</b></div>
+    </div>`;
+  },
+  billingOutTsa(d) {
+    return `<div class="card kpi card-enter">
+      ${kpiChrome("billingOutTsa")}
+      <div class="kpi-label">Chargeable outside base</div>
+      <div class="kpi-value" data-kpi-nudge data-base="${d.outTsa}" data-bump="${d.outTsa + 340}" data-fmt="gbp">${gbp(d.outTsa)}</div>
+      <div class="kpi-meta">${getCal("reportingPeriod")} invoice · 4 charge categories</div>
+    </div>`;
+  },
+  serviceSla(d) {
+    return `<div class="card kpi card-enter">
+      ${kpiChrome("serviceSla")}
+      <div class="kpi-label">Service within SLA</div>
+      <div class="kpi-value ${slaRagClass(d.slaPct)}">${d.slaPct}%</div>
+      <div class="kpi-meta"><b class="up">Improving</b> · target ${getCal("service.slaTargetPct")}%</div>
+    </div>`;
+  },
+  exceptionsCount(d) {
+    return `<div class="card kpi card-enter">
+      ${kpiChrome("exceptionsCount")}
+      <div class="kpi-label">Open exceptions</div>
+      <div class="kpi-value">${d.exceptions.length}</div>
+      <div class="kpi-meta">2 high · cross-system mismatches</div>
+    </div>`;
+  },
+  consumptionChart(d) {
+    return `<div class="card card-enter">
+      ${cardTitle("Consumption vs TSA commitment", getCal("chartRangeLabel"))}
+      ${Charts.line({ labels: inp("months"), series: [
+        { name:"Users", values: inp("workforceTrendUsers"), color:"#E4007C" },
+        { name:"Commitment", values: inp("workforceTrendBaseline"), color:"#9AA7B3", dash:"5 6" },
+      ]})}
+      <div class="legend"><span><i style="background:#E4007C"></i>Vestacy users</span><span><i style="background:#9AA7B3"></i>TSA commitment (${num(d.baseline)})</span></div>
+    </div>`;
+  },
+  monthSummary() {
+    return `<div class="card card-enter">
+      ${cardTitle("What changed this month")}
+      <div class="ai-block"><div class="ai-tag">DONNA summary</div>
+        Consumption crossed the TSA commitment in April and is now <b>38 users over</b> (+3.0%). Of May's 24 joiners, DONNA classified <b>9 as replacement hires</b> and <b>15 as net new</b> — only the net-new count drives the overage. Service performance improved again, while <b>£22.3k</b> of chargeable activity sits outside the base charge. Two cross-system mismatches need validation before the June governance call.
+      </div>
+      <div class="note mt">Every number above links to source records — click any tab on the left to drill into the evidence.</div>
+    </div>`;
+  },
+  recentChanges() {
+    const items = CONFIG.SMARTSHEET_FEED.activity.map(a => `
+      <li><span class="who">${a.who}</span><span class="what">${a.what}</span><span class="ago">${a.ago}</span></li>`).join("");
+    return `<div class="card card-enter">
+      ${cardTitle("Recent changes", "live activity feed")}
+      <ul class="activity-feed">${items}</ul>
+    </div>`;
+  },
+};
+
 /* ---------------- views ---------------- */
 const VIEWS = {
 
   /* ===== OVERVIEW ===== */
   overview() {
-    const w = DATA.workforce, b = DATA.billing, s = DATA.service;
-    return `
-    ${head("TSA position", "at a glance", `One trusted view across SuccessFactors, MSP onboarding, HAM, SAM, ServiceNow, Smartsheet and Finance — what's happening, what's changed, what's chargeable and what needs action for the Reckitt ↔ Vestacy separation.`)}
-
-    <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">Users consuming TSA</div>
-        <div class="kpi-value grad">${num(w.current)}</div>
-        <div class="kpi-meta">vs commitment ${num(DATA.tsa.baseline)} · <b class="down">+${w.aboveBaseline} above</b></div></div>
-      <div class="card kpi"><div class="kpi-label">Chargeable outside base</div>
-        <div class="kpi-value">${gbp(b.outTsa)}</div>
-        <div class="kpi-meta">May invoice · 4 charge categories</div></div>
-      <div class="card kpi"><div class="kpi-label">Service within SLA</div>
-        <div class="kpi-value">${Math.round(s.resolvedInSla*100)}%</div>
-        <div class="kpi-meta"><b class="up">Improving</b> · 3rd consecutive month</div></div>
-      <div class="card kpi"><div class="kpi-label">Open exceptions</div>
-        <div class="kpi-value">${DATA.exceptions.length}</div>
-        <div class="kpi-meta">2 high · cross-system mismatches</div></div>
-    </div>
-
-    <div class="grid cols-2 mt">
-      <div class="card">
-        ${cardTitle("Consumption vs TSA commitment", "Jan – May 2026")}
-        ${Charts.line({ labels: DATA.months, series: [
-          { name:"Users", values: w.trend.users, color:"#E4007C" },
-          { name:"Commitment", values: w.trend.baseline, color:"#9AA7B3", dash:"5 6" },
-        ]})}
-        <div class="legend"><span><i style="background:#E4007C"></i>Vestacy users</span><span><i style="background:#9AA7B3"></i>TSA commitment (1,250)</span></div>
-      </div>
-      <div class="card">
-        ${cardTitle("What changed this month")}
-        <div class="ai-block"><div class="ai-tag">DONNA summary</div>
-          Consumption crossed the TSA commitment in April and is now <b>38 users over</b> (+3.0%). Of May's 24 joiners, DONNA classified <b>9 as replacement hires</b> and <b>15 as net new</b> — only the net-new count drives the overage. Service performance improved again, while <b>£22.3k</b> of chargeable activity sits outside the base charge. Two cross-system mismatches need validation before the June governance call.
-        </div>
-        <div class="note mt">Every number above links to source records — click any tab on the left to drill into the evidence.</div>
-      </div>
-    </div>
-
-    <div class="card mt">
+    const d = overviewData();
+    const layout = getSourceLayout();
+    const kpiHtml = layout.kpi.cards.map(id => OVERVIEW_CARDS[id](d)).join("");
+    const secHtml = layout.secondary.cards.map(id => OVERVIEW_CARDS[id](d)).join("");
+    const exceptionsHtml = layout.showExceptions ? `
+    <div class="card mt card-enter">
       ${cardTitle("Exceptions requiring action", "auto-detected across systems")}
       <table>
         <tr><th>Severity</th><th>Exception</th><th>Detected between</th><th>Next action</th></tr>
-        ${DATA.exceptions.map(e => `
-          <tr class="${e.sev === "high" ? "flagged" : ""}">
+        ${inp("exceptions").map(e => `
+          <tr class="${flaggedRow(e.sev)}">
             <td>${sevBadge(e.sev)}</td>
             <td><b>${e.what}</b><br><span style="color:var(--ink-soft)">${e.detail}</span></td>
             <td><span class="badge teal">${e.src}</span></td>
             <td>${e.action}</td>
           </tr>`).join("")}
       </table>
-    </div>`;
+    </div>` : "";
+    return `
+    ${head("TSA position", "at a glance", `One trusted view across SuccessFactors, MSP onboarding, HAM, SAM, ServiceNow, Smartsheet and Finance — what's happening, what's changed, what's chargeable and what needs action for the Reckitt ↔ Vestacy separation.`)}
+
+    <div class="grid layout-grid kpis" style="--kpi-cols:${layout.kpi.cols}">${kpiHtml}</div>
+
+    <div class="grid layout-grid secondary mt" style="--sec-cols:${layout.secondary.cols}">${secHtml}</div>
+    ${exceptionsHtml}`;
   },
 
   /* ===== WORKFORCE ===== */
   workforce() {
-    const w = DATA.workforce;
+    const baseline = inp("tsaBaseline");
+    const costPerUser = inp("tsaCostPerUser");
+    const wCurrent = inp("workforceCurrent");
+    const above = inp("workforceAboveBaseline");
+    const commitPct = commitmentPct(wCurrent, baseline);
+    const rag = commitmentRagClass(commitPct);
     return `
     ${head("Workforce", "vs TSA commitment", `SuccessFactors (permanent) joined with MSP onboarding data (contingent) to show who is consuming TSA services — and whether each joiner is a replacement hire or net new against the baseline.`)}
 
-    <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">Current users</div><div class="kpi-value grad">${num(w.current)}</div>
-        <div class="kpi-meta">${num(w.permanent)} permanent · ${num(w.contingent)} contingent</div></div>
-      <div class="card kpi"><div class="kpi-label">Joiners (May)</div><div class="kpi-value">${w.joiners}</div>
-        <div class="kpi-meta"><b>${w.replacements} replacement</b> · ${w.netNew} net new</div></div>
-      <div class="card kpi"><div class="kpi-label">Leavers (May)</div><div class="kpi-value">${w.leavers}</div>
+    <div class="grid layout-grid kpis" style="--kpi-cols:${isLiveSource() ? 3 : 2}">
+      <div class="card kpi card-enter">${kpiChrome("workforceCurrent")}<div class="kpi-label">Current users</div><div class="kpi-value grad">${num(wCurrent)}</div>
+        <div class="kpi-meta">${num(inp("workforcePermanent"))} permanent · ${num(inp("workforceContingent"))} contingent</div></div>
+      <div class="card kpi card-enter">${kpiChrome("workforceJoiners")}<div class="kpi-label">Joiners (${getCal("reportingPeriod")})</div><div class="kpi-value">${inp("workforceJoiners")}</div>
+        <div class="kpi-meta"><b>${inp("workforceReplacements")} replacement</b> · ${inp("workforceNetNew")} net new</div></div>
+      <div class="card kpi card-enter">${kpiChrome("workforceLeavers")}<div class="kpi-label">Leavers (${getCal("reportingPeriod")})</div><div class="kpi-value">${inp("workforceLeavers")}</div>
         <div class="kpi-meta">Assets reconciled via HAM</div></div>
-      <div class="card kpi"><div class="kpi-label">Charge exposure</div><div class="kpi-value">${gbp(w.aboveBaseline * DATA.tsa.costPerUser)}</div>
-        <div class="kpi-meta">${w.aboveBaseline} over × £${DATA.tsa.costPerUser}/user/mo</div></div>
+      <div class="card kpi card-enter"><div class="kpi-label">Charge exposure</div><div class="kpi-value">${gbp(above * costPerUser)}</div>
+        <div class="kpi-meta">${above} over × £${costPerUser}/user/mo</div></div>
     </div>
 
     <div class="grid cols-2 mt">
       <div class="card">
         ${cardTitle("Joiners vs leavers")}
-        ${Charts.bars({ labels: DATA.months, series: [
-          { name:"Joiners", values:w.trend.joiners, color:"#E4007C" },
-          { name:"Leavers", values:w.trend.leavers, color:"#FF8A3C" },
+        ${Charts.bars({ labels: inp("months"), series: [
+          { name:"Joiners", values: inp("workforceTrendJoiners"), color:"#E4007C" },
+          { name:"Leavers", values: inp("workforceTrendLeavers"), color:"#FF8A3C" },
         ]})}
         <div class="legend"><span><i style="background:#E4007C"></i>Joiners</span><span><i style="background:#FF8A3C"></i>Leavers</span></div>
       </div>
       <div class="card">
         ${cardTitle("How DONNA classifies a joiner")}
         <div class="ai-block"><div class="ai-tag">Replacement-hire logic</div>
-          When a joiner appears in SuccessFactors or the MSP tracker, DONNA looks for a leaver in the same role family and cost centre within a rolling 60-day window. A match is tagged <b>replacement hire</b> (no impact on the baseline); no match is tagged <b>net new</b> and counts toward the commitment. The classification is shown on every record so it can be challenged at governance.
+          When a joiner appears in SuccessFactors or the MSP tracker, DONNA looks for a leaver in the same role family and cost centre within a rolling <b>${getCal("workforce.replacementWindowDays")}-day</b> window. A match is tagged <b>replacement hire</b> (no impact on the baseline); no match is tagged <b>net new</b> and counts toward the commitment. The classification is shown on every record so it can be challenged at governance.
         </div>
         <div class="mt" style="display:flex;align-items:center;gap:14px">
           <div style="flex:1">
-            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-soft)"><span>Commitment used</span><b>${num(w.current)} / ${num(DATA.tsa.baseline)}</b></div>
-            <div class="bar-wrap" style="margin-top:6px"><div class="bar-fill" style="width:${Math.min(100, w.current/DATA.tsa.baseline*100)}%"></div></div>
-            <div style="font-size:11px;color:var(--red);margin-top:6px;font-weight:600">103% — ${w.aboveBaseline} users above the agreed threshold</div>
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-soft)"><span>Commitment used</span><b>${num(wCurrent)} / ${num(baseline)}</b></div>
+            <div class="bar-wrap" style="margin-top:6px"><div class="bar-fill" style="width:${Math.min(100, commitPct)}%"></div></div>
+            <div style="font-size:11px;color:var(--${rag === "down" ? "red" : rag === "warn" ? "amber" : "green"});margin-top:6px;font-weight:600">${commitPct.toFixed(0)}% — ${above} users above the agreed threshold</div>
           </div>
         </div>
       </div>
@@ -198,7 +398,7 @@ const VIEWS = {
       ${cardTitle("This month's movements", "linked to onboarding & hardware")}
       <table>
         <tr><th>Person</th><th>Population</th><th>Movement</th><th>Classification</th><th>Hardware</th><th>Source</th></tr>
-        ${w.movers.map(m => `
+        ${inp("workforceMovers").map(m => `
         <tr>
           <td><b>${m.name}</b></td>
           <td>${m.type}</td>
@@ -213,24 +413,27 @@ const VIEWS = {
 
   /* ===== HARDWARE ===== */
   hardware() {
-    const h = DATA.hardware;
+    const pending = inp("hardwarePendingRequests");
+    const chargeable = inp("hardwareChargeableMonth");
+    const deviceCharge = getCal("hardware.deviceCharge");
+    const mix = inp("hardwareMix");
     const check = v => v ? "✓" : "—";
     return `
     ${head("EUC &", "hardware", `HAM allocation joined to onboarding records: who received a laptop, who is BYOD, whether the device is Reckitt- or Vestacy-provided, and where a charge should apply. The validation view below replaces the manual check Murphy runs today.`)}
 
     <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">Laptops issued</div><div class="kpi-value">${num(h.laptopsIssued)}</div><div class="kpi-meta">Reckitt-provided estate</div></div>
-      <div class="card kpi"><div class="kpi-label">BYOD users</div><div class="kpi-value">${num(h.byod)}</div><div class="kpi-meta">No device charge applies</div></div>
-      <div class="card kpi"><div class="kpi-label">Pending requests</div><div class="kpi-value warn">${h.pendingRequests}</div><div class="kpi-meta">10+ days · linked SNOW incidents</div></div>
-      <div class="card kpi"><div class="kpi-label">Chargeable devices (May)</div><div class="kpi-value grad">${h.chargeableThisMonth}</div><div class="kpi-meta">New-joiner hardware · ${gbp(h.chargeableThisMonth*612)}</div></div>
+      <div class="card kpi"><div class="kpi-label">Laptops issued</div><div class="kpi-value">${num(inp("hardwareLaptopsIssued"))}</div><div class="kpi-meta">Reckitt-provided estate</div></div>
+      <div class="card kpi"><div class="kpi-label">BYOD users</div><div class="kpi-value">${num(inp("hardwareByod"))}</div><div class="kpi-meta">No device charge applies</div></div>
+      <div class="card kpi"><div class="kpi-label">Pending requests</div><div class="kpi-value ${pending >= getCal("hardware.pendingWarnCount") ? "warn" : ""}">${pending}</div><div class="kpi-meta">${getCal("hardware.pendingWarnCount")}+ days · linked SNOW incidents</div></div>
+      <div class="card kpi"><div class="kpi-label">Chargeable devices (${getCal("reportingPeriod")})</div><div class="kpi-value grad">${chargeable}</div><div class="kpi-meta">New-joiner hardware · ${gbp(chargeable * deviceCharge)}</div></div>
     </div>
 
     <div class="grid cols-2 mt">
       <div class="card" style="display:flex;gap:18px;align-items:center">
-        <div>${Charts.donut({ items: h.mix, centerTop: num(h.mix.reduce((a,b)=>a+b.value,0)), centerBottom: "tracked users" })}</div>
+        <div>${Charts.donut({ items: mix, centerTop: num(mix.reduce((a,b)=>a+b.value,0)), centerBottom: "tracked users" })}</div>
         <div style="flex:1">
           ${cardTitle("Estate mix")}
-          ${h.mix.map(m => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;border-bottom:1px solid #F0F3F6">
+          ${mix.map(m => `<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;border-bottom:1px solid #F0F3F6">
             <span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${m.color};margin-right:8px"></i>${m.label}</span><b>${num(m.value)}</b></div>`).join("")}
         </div>
       </div>
@@ -246,7 +449,7 @@ const VIEWS = {
       ${cardTitle("Onboarding ↔ hardware validation", "the Murphy view")}
       <table>
         <tr><th>User</th><th>Onboarded</th><th>HW requested</th><th>Issued</th><th>BYOD</th><th>Provider</th><th>Month</th><th class="num">Charge</th><th>Status</th></tr>
-        ${h.validation.map(v => `
+        ${inp("hardwareValidation").map(v => `
         <tr class="${v.status === "mismatch" ? "flagged" : ""}">
           <td><b>${v.user}</b></td>
           <td>${check(v.onboarded)}</td><td>${check(v.requested)}</td><td>${check(v.issued)}</td><td>${check(v.byod)}</td>
@@ -263,22 +466,23 @@ const VIEWS = {
 
   /* ===== SOFTWARE ===== */
   software() {
-    const s = DATA.software;
+    const pendingCount = inp("softwareItems").filter(it => it.approved === "Pending").length;
+    const pendingWarn = pendingCount >= getCal("software.pendingApprovalWarn");
     return `
     ${head("Software &", "licensing", `SAM allocation classified against the TSA catalogue: standard provision, right-to-use continuations, and non-standard requests with their approval status and cost impact — by month and cumulatively.`)}
 
     <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">Standard (in TSA)</div><div class="kpi-value">${gbp(s.standardCost)}</div><div class="kpi-meta">No additional charge</div></div>
-      <div class="card kpi"><div class="kpi-label">Non-standard (May)</div><div class="kpi-value grad">${gbp(s.nonStandardCost)}</div><div class="kpi-meta">Chargeable to Vestacy</div></div>
-      <div class="card kpi"><div class="kpi-label">Cumulative non-standard</div><div class="kpi-value">${gbp(s.cumulativeNonStandard)}</div><div class="kpi-meta">Since TSA start</div></div>
-      <div class="card kpi"><div class="kpi-label">Awaiting approval</div><div class="kpi-value warn">2</div><div class="kpi-meta">1 already appearing on invoice</div></div>
+      <div class="card kpi"><div class="kpi-label">Standard (in TSA)</div><div class="kpi-value">${gbp(inp("softwareStandardCost"))}</div><div class="kpi-meta">No additional charge</div></div>
+      <div class="card kpi"><div class="kpi-label">Non-standard (${getCal("reportingPeriod")})</div><div class="kpi-value grad">${gbp(inp("softwareNonStandardCost"))}</div><div class="kpi-meta">Chargeable to Vestacy</div></div>
+      <div class="card kpi"><div class="kpi-label">Cumulative non-standard</div><div class="kpi-value">${gbp(inp("softwareCumulative"))}</div><div class="kpi-meta">Since TSA start</div></div>
+      <div class="card kpi"><div class="kpi-label">Awaiting approval</div><div class="kpi-value ${pendingWarn ? "warn" : ""}">${pendingCount}</div><div class="kpi-meta">threshold ≥ ${getCal("software.pendingApprovalWarn")}</div></div>
     </div>
 
     <div class="grid cols-2 mt">
       <div class="card">
         ${cardTitle("Non-standard software cost", "monthly, £")}
-        ${Charts.line({ labels: DATA.months, series: [
-          { name:"Non-standard", values:s.trend.nonStandard, color:"#FF8A3C" },
+        ${Charts.line({ labels: inp("months"), series: [
+          { name:"Non-standard", values: inp("softwareTrendNonStd"), color:"#FF8A3C" },
         ], yFmt: v => "£" + (v/1000).toFixed(1) + "k"})}
       </div>
       <div class="card">
@@ -293,7 +497,7 @@ const VIEWS = {
       ${cardTitle("Software register", "standard · non-standard · right-to-use")}
       <table>
         <tr><th>User / group</th><th>Software</th><th>Class</th><th>Requested</th><th>Approval</th><th class="num">£ / month</th><th class="num">Cumulative</th><th>Chargeable</th></tr>
-        ${s.items.map(it => `
+        ${inp("softwareItems").map(it => `
         <tr class="${it.approved === "Pending" ? "flagged" : ""}">
           <td><b>${it.user}</b></td><td>${it.sw}</td>
           <td>${it.cls === "Standard" ? '<span class="badge green">Standard</span>' : it.cls === "Right-to-use" ? '<span class="badge purple">Right-to-use</span>' : '<span class="badge pink">Non-standard</span>'}</td>
@@ -309,40 +513,43 @@ const VIEWS = {
 
   /* ===== SERVICE ===== */
   service() {
-    const s = DATA.service;
+    const slaPct = Math.round(inp("serviceResolvedInSla") * 100);
+    const aged = inp("serviceAged");
+    const agedDays = getCal("service.agedItemDays");
+    const agedWarn = aged >= getCal("service.agedWarnCount");
     return `
     ${head("Service", "activity", `ServiceNow summarised for the month: incidents, service requests and demand, resolution performance, aged items and recurring issues — with the month-on-month movement the governance call needs.`)}
 
     <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">Incidents (May)</div><div class="kpi-value">${s.incidents}</div><div class="kpi-meta"><b class="up">▼ 3.7%</b> vs April</div></div>
-      <div class="card kpi"><div class="kpi-label">Service requests</div><div class="kpi-value">${s.requests}</div><div class="kpi-meta"><b class="warn">▲ 2.6%</b> — joiner driven</div></div>
-      <div class="card kpi"><div class="kpi-label">Resolved in SLA</div><div class="kpi-value grad">${Math.round(s.resolvedInSla*100)}%</div><div class="kpi-meta">Open items: ${s.open}</div></div>
-      <div class="card kpi"><div class="kpi-label">Aged > 20 days</div><div class="kpi-value">${s.aged}</div><div class="kpi-meta"><b class="up">▼ from 14</b> in April</div></div>
+      <div class="card kpi"><div class="kpi-label">Incidents (${getCal("reportingPeriod")})</div><div class="kpi-value">${inp("serviceIncidents")}</div><div class="kpi-meta"><b class="up">▼ 3.7%</b> vs prior month</div></div>
+      <div class="card kpi"><div class="kpi-label">Service requests</div><div class="kpi-value">${inp("serviceRequests")}</div><div class="kpi-meta"><b class="warn">▲ 2.6%</b> — joiner driven</div></div>
+      <div class="card kpi"><div class="kpi-label">Resolved in SLA</div><div class="kpi-value grad ${slaRagClass(slaPct)}">${slaPct}%</div><div class="kpi-meta">Target ${getCal("service.slaTargetPct")}% · open: ${inp("serviceOpen")}</div></div>
+      <div class="card kpi"><div class="kpi-label">Aged > ${agedDays} days</div><div class="kpi-value ${agedWarn ? "warn" : ""}">${aged}</div><div class="kpi-meta">warn ≥ ${getCal("service.agedWarnCount")}</div></div>
     </div>
 
     <div class="grid cols-2 mt">
       <div class="card">
         ${cardTitle("Volume trend", "incidents & requests")}
-        ${Charts.line({ labels: DATA.months, series: [
-          { name:"Incidents", values:s.trend.incidents, color:"#6C2D82" },
-          { name:"Requests",  values:s.trend.requests,  color:"#4FB3E8" },
+        ${Charts.line({ labels: inp("months"), series: [
+          { name:"Incidents", values: inp("serviceTrendIncidents"), color:"#6C2D82" },
+          { name:"Requests",  values: inp("serviceTrendRequests"),  color:"#4FB3E8" },
         ]})}
         <div class="legend"><span><i style="background:#6C2D82"></i>Incidents</span><span><i style="background:#4FB3E8"></i>Service requests</span></div>
       </div>
       <div class="card">
         ${cardTitle("Aged items trend")}
-        ${Charts.bars({ labels: DATA.months, series: [
-          { name:"Aged", values:s.trend.aged, color:"#FF4F58" },
+        ${Charts.bars({ labels: inp("months"), series: [
+          { name:"Aged", values: inp("serviceTrendAged"), color:"#FF4F58" },
         ]})}
-        <div class="note mt">Service performance is <b>improving month-on-month</b>: falling incidents and aged items with SLA attainment held at 94%.</div>
+        <div class="note mt">Service performance is <b>improving month-on-month</b>: falling incidents and aged items with SLA attainment held at ${getCal("service.slaTargetPct")}%.</div>
       </div>
     </div>
 
     <div class="card mt">
       ${cardTitle("Recurring issues", "auto-clustered from ticket text")}
       <table>
-        <tr><th>Issue cluster</th><th class="num">Tickets (May)</th><th>Direction</th><th>Note</th></tr>
-        ${s.recurring.map(r => `
+        <tr><th>Issue cluster</th><th class="num">Tickets (${getCal("reportingPeriod")})</th><th>Direction</th><th>Note</th></tr>
+        ${inp("serviceRecurring").map(r => `
         <tr>
           <td><b>${r.issue}</b></td>
           <td class="num">${r.count}</td>
@@ -355,15 +562,15 @@ const VIEWS = {
 
   /* ===== DEMAND ===== */
   demand() {
-    const d = DATA.demand;
-    const open = d.rows.filter(r => r.stage !== "Approved").length;
-    const outside = d.rows.filter(r => r.scope === "Outside TSA");
+    const rows = inp("demandRows");
+    const open = rows.filter(r => r.stage !== "Approved").length;
+    const outside = rows.filter(r => r.scope === "Outside TSA");
     return `
     ${head("Demand &", "approvals", `Demand raised during the TSA period — whether it arrives via ServiceNow, Smartsheet or legacy Excel templates — tracked through approval with cost and TSA-scope flags, ready for monthly governance.`)}
 
     <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">New demands (May)</div><div class="kpi-value">${d.rows.length}</div><div class="kpi-meta">3 sources, one register</div></div>
-      <div class="card kpi"><div class="kpi-label">Awaiting decision</div><div class="kpi-value warn">${open}</div><div class="kpi-meta">For June governance</div></div>
+      <div class="card kpi"><div class="kpi-label">New demands (${getCal("reportingPeriod")})</div><div class="kpi-value">${rows.length}</div><div class="kpi-meta">3 sources, one register</div></div>
+      <div class="card kpi"><div class="kpi-label">Awaiting decision</div><div class="kpi-value warn">${open}</div><div class="kpi-meta">For next governance</div></div>
       <div class="card kpi"><div class="kpi-label">Outside TSA scope</div><div class="kpi-value grad">${outside.length}</div><div class="kpi-meta">${gbp(outside.reduce((a,b)=>a+b.cost,0))} estimated</div></div>
       <div class="card kpi"><div class="kpi-label">Capture gaps</div><div class="kpi-value">1</div><div class="kpi-meta">Excel-only record (DMD-0044)</div></div>
     </div>
@@ -372,7 +579,7 @@ const VIEWS = {
       ${cardTitle("Demand register", "ServiceNow · Smartsheet · Excel")}
       <table>
         <tr><th>ID</th><th>Demand</th><th>Owner</th><th>Captured in</th><th>Stage</th><th>TSA scope</th><th class="num">Est. cost</th></tr>
-        ${d.rows.map(r => `
+        ${rows.map(r => `
         <tr class="${r.flag ? "flagged" : ""}">
           <td><b>${r.id}</b></td><td>${r.title}</td><td>${r.owner}</td>
           <td><span class="badge grey">${r.source}</span></td>
@@ -387,23 +594,26 @@ const VIEWS = {
 
   /* ===== BILLING ===== */
   billing() {
-    const b = DATA.billing;
+    const bTotal = inp("billingMonthTotal");
+    const outTsa = inp("billingOutTsa");
+    const outPct = bTotal ? ((outTsa / bTotal) * 100).toFixed(1) : 0;
+    const outWarn = parseFloat(outPct) >= getCal("billing.outTsaWarnPct");
     return `
     ${head("Billing &", "exceptions", `Every invoice line matched back to the user, asset, licence or demand that evidences it — separating the base TSA charge from chargeable activity, with market and cost-centre cuts for reporting.`)}
 
     <div class="grid kpis">
-      <div class="card kpi"><div class="kpi-label">May invoice total</div><div class="kpi-value">${gbp(b.monthTotal)}</div><div class="kpi-meta">All TSA services</div></div>
-      <div class="card kpi"><div class="kpi-label">Base TSA charge</div><div class="kpi-value">${gbp(b.inTsa)}</div><div class="kpi-meta">Per agreed schedule</div></div>
-      <div class="card kpi"><div class="kpi-label">Chargeable outside base</div><div class="kpi-value grad">${gbp(b.outTsa)}</div><div class="kpi-meta">11.2% of invoice</div></div>
+      <div class="card kpi"><div class="kpi-label">${getCal("reportingPeriod")} invoice total</div><div class="kpi-value">${gbp(bTotal)}</div><div class="kpi-meta">All TSA services</div></div>
+      <div class="card kpi"><div class="kpi-label">Base TSA charge</div><div class="kpi-value">${gbp(inp("billingInTsa"))}</div><div class="kpi-meta">Per agreed schedule</div></div>
+      <div class="card kpi"><div class="kpi-label">Chargeable outside base</div><div class="kpi-value grad ${outWarn ? "warn" : ""}">${gbp(outTsa)}</div><div class="kpi-meta">${outPct}% of invoice · warn ≥ ${getCal("billing.outTsaWarnPct")}%</div></div>
       <div class="card kpi"><div class="kpi-label">Lines on hold</div><div class="kpi-value warn">1</div><div class="kpi-meta">Approval evidence pending</div></div>
     </div>
 
     <div class="grid cols-2 mt">
       <div class="card">
-        ${cardTitle("Invoice breakdown", "May 2026")}
+        ${cardTitle("Invoice breakdown", getCal("reportingPeriod"))}
         <table>
           <tr><th>Line</th><th>Evidence basis</th><th>Scope</th><th class="num">Amount</th></tr>
-          ${b.lines.map(l => `
+          ${inp("billingLines").map(l => `
           <tr>
             <td><b>${l.line}</b></td>
             <td style="color:var(--ink-soft)">${l.basis}</td>
@@ -416,12 +626,12 @@ const VIEWS = {
         ${cardTitle("By market", "users & cost")}
         <table>
           <tr><th>Market</th><th class="num">Users</th><th class="num">Cost</th><th>Share</th></tr>
-          ${b.markets.map(m => `
+          ${inp("billingMarkets").map(m => `
           <tr>
             <td><b>${m.market}</b></td>
             <td class="num">${num(m.users)}</td>
             <td class="num">${gbp(m.cost)}</td>
-            <td style="width:30%"><div class="bar-wrap"><div class="bar-fill" style="width:${Math.round(m.cost/b.monthTotal*100)}%"></div></div></td>
+            <td style="width:30%"><div class="bar-wrap"><div class="bar-fill" style="width:${Math.round(m.cost/bTotal*100)}%"></div></div></td>
           </tr>`).join("")}
         </table>
         <div class="note mt">Market / business-unit / cost-centre cuts come from joining Finance extracts to SuccessFactors org data.</div>
@@ -432,8 +642,8 @@ const VIEWS = {
       ${cardTitle("Exception log", "chargeable activity & data gaps")}
       <table>
         <tr><th>Severity</th><th>Exception</th><th>Detected between</th><th>Action</th></tr>
-        ${DATA.exceptions.map(e => `
-        <tr class="${e.sev === "high" ? "flagged" : ""}">
+        ${inp("exceptions").map(e => `
+          <tr class="${flaggedRow(e.sev)}">
           <td>${sevBadge(e.sev)}</td>
           <td><b>${e.what}</b><br><span style="color:var(--ink-soft)">${e.detail}</span></td>
           <td><span class="badge teal">${e.src}</span></td>
@@ -445,15 +655,16 @@ const VIEWS = {
 
   /* ===== REPORT ===== */
   report() {
-    const r = DATA.report;
+    const narrative = inp("reportNarrative");
+    const actions = inp("reportActions");
     return `
     ${head("Monthly TSA", "report", `DONNA assembles the monthly pack — performance summary, service and billing positions, workforce vs commitment, exceptions and actions — and drafts the narrative for the Reckitt ↔ Vestacy governance call. Humans review; nothing is sent unchecked.`)}
 
     <div class="grid cols-2">
       <div class="card">
         ${cardTitle("Draft narrative", "generated · awaiting review")}
-        <div class="ai-block"><div class="ai-tag">DONNA draft — May 2026</div>
-          ${r.narrative.split("\n\n").map(p => `<p style="margin-bottom:10px">${p}</p>`).join("")}
+        <div class="ai-block"><div class="ai-tag">DONNA draft — ${getCal("reportingPeriod")}</div>
+          ${narrative.split("\n\n").map(p => `<p style="margin-bottom:10px">${p}</p>`).join("")}
         </div>
       </div>
       <div>
@@ -477,7 +688,7 @@ const VIEWS = {
           ${cardTitle("Governance actions", "owned & dated")}
           <table>
             <tr><th>Action</th><th>Owner</th><th>Due</th><th>Status</th></tr>
-            ${r.actions.map(a => `
+            ${actions.map(a => `
             <tr><td>${a.action}</td><td><b>${a.owner}</b></td><td>${a.due}</td>
             <td>${a.status === "Open" ? '<span class="badge amber">Open</span>' : '<span class="badge teal">In progress</span>'}</td></tr>`).join("")}
           </table>
@@ -497,7 +708,7 @@ const VIEWS = {
     </div>
 
     <div class="grid cols-3 mt">
-      ${DATA.architecture.core.map(c => `
+      ${inp("architecture").core.map(c => `
       <div class="card flat">
         ${cardTitle(c.name)}
         <p style="font-size:12.5px;line-height:1.6;color:var(--ink-soft)">${c.desc}</p>
@@ -508,7 +719,7 @@ const VIEWS = {
       ${cardTitle("Design positioning", "from the brief")}
       <p style="font-size:12.5px;line-height:1.7;color:var(--ink-soft)">
         DONNA is deliberately a <b>practical run capability for the c.18-month separation period</b>, not a long-term strategic platform.
-        It reads from the systems of record — it never writes back — so it can be stood up quickly, and stood down cleanly when the TSA with Vestacy ends in ${DATA.tsa.endDate}.
+        It reads from the systems of record — it never writes back — so it can be stood up quickly, and stood down cleanly when the TSA with Vestacy ends in ${inp("tsaEndDate")}.
         Smartsheet remains the human-in-the-loop surface for manual validation and governance actions while its configuration is finalised.
       </p>
     </div>`;
@@ -517,7 +728,7 @@ const VIEWS = {
 
 /* ---------------- architecture diagram ---------------- */
 function wireArchitecture(restartFlows = false) {
-  const A = DATA.architecture;
+  const A = inp("architecture");
   const ingest = getSourceMeta();
   const ingestColor = DATA_SOURCE === "excel" ? "#FF8A3C" : "#00A3A1";
   const W = 980, H = 600;
@@ -662,8 +873,146 @@ document.getElementById("sourceToggle").addEventListener("click", e => {
 
 onDataSourceChange(() => {
   updateSourceUI();
-  setTab(currentTab, { restartFlows: true, silent: true });
+  switchSourceView();
 });
+
+/* ---------------- calibration panel ---------------- */
+const calPanel = document.getElementById("calPanel");
+const calBackdrop = document.getElementById("calBackdrop");
+const calBody = document.getElementById("calBody");
+let calPanelOpen = false;
+
+const CAL_FIELDS = [
+  { path: "workforce.commitmentAmberPct", label: "Commitment amber (%)", min: 95, max: 105, step: 1 },
+  { path: "workforce.commitmentRedPct",   label: "Commitment red (%)",   min: 98, max: 110, step: 1 },
+  { path: "workforce.replacementWindowDays", label: "Replacement window (days)", min: 30, max: 90, step: 5 },
+  { path: "service.slaTargetPct", label: "SLA target (%)", min: 80, max: 100, step: 1 },
+  { path: "service.slaAmberPct",  label: "SLA amber (%)",  min: 70, max: 99, step: 1 },
+  { path: "service.agedItemDays", label: "Aged item threshold (days)", min: 5, max: 40, step: 1 },
+  { path: "service.agedWarnCount", label: "Aged items warn count", min: 5, max: 30, step: 1 },
+  { path: "hardware.pendingWarnCount", label: "HW pending warn count", min: 1, max: 20, step: 1 },
+  { path: "hardware.deviceCharge", label: "Device charge (£)", min: 400, max: 800, step: 10 },
+  { path: "software.pendingApprovalWarn", label: "SW pending approval warn", min: 1, max: 5, step: 1 },
+  { path: "billing.outTsaWarnPct", label: "Out-of-TSA warn (%)", min: 5, max: 20, step: 0.5 },
+];
+
+function setCal(path, value) {
+  const parts = path.split(".");
+  let obj = CONFIG.CALIBRATION;
+  for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
+  obj[parts[parts.length - 1]] = value;
+}
+
+function moveModule(id, dir) {
+  const sorted = [...CONFIG.MODULES].sort((a, b) => a.order - b.order);
+  const idx = sorted.findIndex(m => m.id === id);
+  const swap = idx + dir;
+  if (swap < 0 || swap >= sorted.length) return;
+  const a = sorted[idx].order, b = sorted[swap].order;
+  sorted[idx].order = b;
+  sorted[swap].order = a;
+  notifyConfigChange();
+}
+
+function renderCalPanel() {
+  const sorted = [...CONFIG.MODULES].sort((a, b) => a.order - b.order);
+  const modulesHtml = sorted.map((m, i) => `
+    <div class="cal-module" data-id="${m.id}">
+      <label><input type="checkbox" data-mod-enable="${m.id}" ${m.enabled ? "checked" : ""}> ${m.label}</label>
+      <div class="cal-order">
+        <button type="button" data-mod-up="${m.id}" ${i === 0 ? "disabled" : ""} title="Move up">↑</button>
+        <button type="button" data-mod-down="${m.id}" ${i === sorted.length - 1 ? "disabled" : ""} title="Move down">↓</button>
+      </div>
+    </div>`).join("");
+
+  const inputsHtml = CONFIG.INPUTS.map(inp => `
+    <tr>
+      <td><code>${inp.key}</code></td>
+      <td>${inp.label}</td>
+      <td><input type="text" data-input-key="${inp.key}" value="${inp.sourceField}"></td>
+    </tr>`).join("");
+
+  const calHtml = CAL_FIELDS.map(f => {
+    const val = getCal(f.path);
+    return `
+    <div class="cal-field" data-cal="${f.path}">
+      <label>${f.label}</label>
+      <input type="range" data-cal-range="${f.path}" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}">
+      <input type="number" data-cal-num="${f.path}" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}">
+    </div>`;
+  }).join("");
+
+  calBody.innerHTML = `
+    <div class="cal-section">
+      <div class="cal-section-title">Modules</div>
+      ${modulesHtml}
+    </div>
+    <div class="cal-section">
+      <div class="cal-section-title">Input mapping · Excel fields</div>
+      <table class="cal-table">
+        <tr><th>Key</th><th>Metric</th><th>Source field</th></tr>
+        ${inputsHtml}
+      </table>
+    </div>
+    <div class="cal-section">
+      <div class="cal-section-title">Calibration thresholds</div>
+      ${calHtml}
+    </div>`;
+}
+
+function openCalPanel() {
+  calPanelOpen = true;
+  renderCalPanel();
+  calPanel.classList.add("open");
+  calBackdrop.classList.add("open");
+}
+
+function closeCalPanel() {
+  calPanelOpen = false;
+  calPanel.classList.remove("open");
+  calBackdrop.classList.remove("open");
+}
+
+document.getElementById("calibrateBtn").addEventListener("click", openCalPanel);
+document.getElementById("calClose").addEventListener("click", closeCalPanel);
+calBackdrop.addEventListener("click", closeCalPanel);
+
+calBody.addEventListener("change", e => {
+  const enable = e.target.dataset.modEnable;
+  if (enable) {
+    const mod = CONFIG.MODULES.find(m => m.id === enable);
+    if (mod) mod.enabled = e.target.checked;
+    notifyConfigChange();
+    return;
+  }
+  const inputKey = e.target.dataset.inputKey;
+  if (inputKey) {
+    const entry = CONFIG.INPUTS.find(i => i.key === inputKey);
+    if (entry) entry.sourceField = e.target.value;
+  }
+});
+
+calBody.addEventListener("input", e => {
+  const path = e.target.dataset.calRange || e.target.dataset.calNum;
+  if (!path) return;
+  const val = parseFloat(e.target.value);
+  if (Number.isNaN(val)) return;
+  setCal(path, val);
+  const pair = calBody.querySelector(
+    e.target.dataset.calRange ? `[data-cal-num="${path}"]` : `[data-cal-range="${path}"]`
+  );
+  if (pair) pair.value = val;
+  applyConfig();
+});
+
+calBody.addEventListener("click", e => {
+  const up = e.target.dataset.modUp;
+  const down = e.target.dataset.modDown;
+  if (up) moveModule(up, -1);
+  if (down) moveModule(down, 1);
+});
+
+onConfigChange(() => applyConfig());
 
 /* ---------------- easter egg ---------------- */
 let brandClicks = 0, brandTimer;
@@ -681,5 +1030,6 @@ document.getElementById("brand").addEventListener("click", () => {
 });
 
 /* ---------------- boot ---------------- */
+document.body.classList.add("source-excel");
 updateSourceUI();
 setTab("overview");
