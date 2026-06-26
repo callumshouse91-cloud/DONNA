@@ -150,6 +150,11 @@ function setTab(id, opts = {}) {
 function initDashboard() {
   ensureValidConfig();
   buildNav();
+  if (getActiveModules().length === 0) {
+    console.warn("DONNA: no active modules after load — resetting to default config");
+    resetConfigToDefault({ persist: true, notify: false, keepOnboarding: true });
+    buildNav();
+  }
   const tab = firstActiveTab();
   currentTab = tab || "overview";
   setTab(currentTab, { silent: true });

@@ -52,6 +52,12 @@ function deepMerge(base, patch) {
 
 function migrateConfig() {
   if (CONFIG.configVersion !== CONFIG_VERSION) CONFIG.configVersion = CONFIG_VERSION;
+  if (Array.isArray(CONFIG.MODULES)) {
+    CONFIG.MODULES.forEach(m => {
+      if (m && m.enabled !== false) m.enabled = true;
+      else if (m) m.enabled = false;
+    });
+  }
   DEFAULT_CONFIG.MODULES.forEach(def => {
     const mod = CONFIG.MODULES.find(m => m.id === def.id);
     if (mod && !mod.sources) mod.sources = deepClone(def.sources);
@@ -339,7 +345,7 @@ function getCal(path) {
 }
 
 function getActiveModules() {
-  return CONFIG.MODULES.filter(m => m.enabled).sort((a, b) => a.order - b.order);
+  return CONFIG.MODULES.filter(m => m.enabled !== false).sort((a, b) => a.order - b.order);
 }
 
 function getSourceLayout() {
