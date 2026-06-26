@@ -933,16 +933,58 @@ function wireEasterEgg() {
 
 /* ---------------- boot ---------------- */
 function bootDonna() {
-  if (isSmartsheetPreview()) document.body.classList.add("ss-preview-on");
-  wireHelpUi();
-  wireCalibrateUi();
-  wireEasterEgg();
-  calBackdrop?.addEventListener("click", closeCalPanel);
-  document.getElementById("smartsheetPreviewToggle")?.addEventListener("change", e => {
-    setSmartsheetPreview(e.target.checked);
-  });
-  initDashboard();
-  showWelcomeIfNeeded();
+  onConfigChange(applyConfig);
+
+  try {
+    initDashboard();
+  } catch (err) {
+    console.error("DONNA: initDashboard failed", err);
+  }
+
+  try {
+    if (isSmartsheetPreview()) document.body.classList.add("ss-preview-on");
+  } catch (err) {
+    console.error("DONNA: ss-preview body class failed", err);
+  }
+
+  try {
+    wireHelpUi();
+  } catch (err) {
+    console.error("DONNA: wireHelpUi failed", err);
+  }
+
+  try {
+    wireCalibrateUi();
+  } catch (err) {
+    console.error("DONNA: wireCalibrateUi failed", err);
+  }
+
+  try {
+    wireEasterEgg();
+  } catch (err) {
+    console.error("DONNA: wireEasterEgg failed", err);
+  }
+
+  try {
+    const backdrop = document.getElementById("calBackdrop");
+    backdrop?.addEventListener("click", closeCalPanel);
+  } catch (err) {
+    console.error("DONNA: calBackdrop listener failed", err);
+  }
+
+  try {
+    document.getElementById("smartsheetPreviewToggle")?.addEventListener("change", e => {
+      setSmartsheetPreview(e.target.checked);
+    });
+  } catch (err) {
+    console.error("DONNA: smartsheet preview toggle failed", err);
+  }
+
+  try {
+    showWelcomeIfNeeded();
+  } catch (err) {
+    console.error("DONNA: showWelcomeIfNeeded failed", err);
+  }
 }
 
 if (document.readyState === "loading") {
