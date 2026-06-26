@@ -13,6 +13,7 @@ const _ALL_INTEGRATED = [
 ].map(_src);
 
 const DEFAULT_CONFIG = {
+  configVersion: 2,
   MODULES: [
     {
       id: "overview", label: "Overview", enabled: true, order: 1,

@@ -44,7 +44,7 @@ const MODULE_UI = {
   software:  { icon: I.software },
   service:   { icon: I.service },
   demand:    { icon: I.demand },
-  billing:   { icon: I.billing, pill: () => inp("exceptions").length },
+  billing:   { icon: I.billing, pill: () => (inp("exceptions") || []).length },
   report:    { icon: I.report, group: "Outputs" },
   arch:      { icon: I.arch, group: "How it's wired" },
 };
@@ -52,6 +52,7 @@ const MODULE_UI = {
 const nav = document.getElementById("nav");
 
 function buildNav() {
+  if (!nav) return;
   nav.innerHTML = "";
   let lastGroup = null;
   getActiveModules().forEach(m => {
@@ -117,6 +118,8 @@ function renderCustomModule(moduleId) {
 }
 
 function setTab(id, opts = {}) {
+  const viewEl = document.getElementById("view");
+  if (!viewEl) return;
   const enabled = id && getActiveModules().some(m => m.id === id);
   if (!enabled) id = firstActiveTab();
   currentTab = id || "";
@@ -126,18 +129,31 @@ function setTab(id, opts = {}) {
     const ui = MODULE_UI[tabId];
     if (ui?.pill) p.textContent = ui.pill();
   });
-  const viewEl = document.getElementById("view");
   if (!id) {
     viewEl.innerHTML = `<div class="empty-state card">No modules enabled — open <b>Calibrate</b> to turn a tab on.</div>`;
     return;
   }
-  const render = VIEWS[id] || (() => renderCustomModule(id));
-  viewEl.innerHTML = render();
-  wireCardHints(viewEl);
-  if (opts.sourceFadeIn) viewEl.classList.add("source-fade-in");
-  if (id === "arch") wireArchitecture(opts.restartFlows);
-  wireViewChrome(id, opts);
-  if (!opts.silent) window.scrollTo({ top: 0 });
+  try {
+    const render = VIEWS[id] || (() => renderCustomModule(id));
+    viewEl.innerHTML = render();
+    wireCardHints(viewEl);
+    if (opts.sourceFadeIn) viewEl.classList.add("source-fade-in");
+    if (id === "arch") wireArchitecture(opts.restartFlows);
+    wireViewChrome(id, opts);
+    if (!opts.silent) window.scrollTo({ top: 0 });
+  } catch (err) {
+    console.error("DONNA: failed to render module", id, err);
+    viewEl.innerHTML = `<div class="empty-state card">This view could not load — open <b>Calibrate</b> or refresh the page.</div>`;
+  }
+}
+
+function initDashboard() {
+  ensureValidConfig();
+  buildNav();
+  const tab = firstActiveTab();
+  currentTab = tab || "overview";
+  setTab(currentTab, { silent: true });
+  updateIntegrationUI();
 }
 
 function applyConfig() {
@@ -891,36 +907,46 @@ function wireArchitecture(restartFlows = false) {
 }
 
 /* ---------------- Smartsheet preview toggle ---------------- */
-document.getElementById("smartsheetPreviewToggle").addEventListener("change", e => {
-  setSmartsheetPreview(e.target.checked);
-});
-
 onSmartsheetPreviewChange(() => {
   updateIntegrationUI();
   switchSourceView();
 });
 
 /* ---------------- easter egg ---------------- */
-let brandClicks = 0, brandTimer;
-document.getElementById("brand").addEventListener("click", () => {
-  brandClicks++;
-  clearTimeout(brandTimer);
-  brandTimer = setTimeout(() => (brandClicks = 0), 900);
-  if (brandClicks >= 3) {
-    brandClicks = 0;
-    const t = document.getElementById("toast");
-    t.textContent = "Good morning, Donna 👋 — yes, it's named after you.";
-    t.classList.add("show");
-    setTimeout(() => t.classList.remove("show"), 3200);
-  }
-});
+function wireEasterEgg() {
+  const brand = document.getElementById("brand");
+  if (!brand) return;
+  let brandClicks = 0, brandTimer;
+  brand.addEventListener("click", () => {
+    brandClicks++;
+    clearTimeout(brandTimer);
+    brandTimer = setTimeout(() => (brandClicks = 0), 900);
+    if (brandClicks >= 3) {
+      brandClicks = 0;
+      const t = document.getElementById("toast");
+      t.textContent = "Good morning, Donna 👋 — yes, it's named after you.";
+      t.classList.add("show");
+      setTimeout(() => t.classList.remove("show"), 3200);
+    }
+  });
+}
 
 /* ---------------- boot ---------------- */
-if (isSmartsheetPreview()) document.body.classList.add("ss-preview-on");
-wireHelpUi();
-wireCalibrateUi();
-calBackdrop.addEventListener("click", closeCalPanel);
-updateIntegrationUI();
-buildNav();
-setTab("overview");
-showWelcomeIfNeeded();
+function bootDonna() {
+  if (isSmartsheetPreview()) document.body.classList.add("ss-preview-on");
+  wireHelpUi();
+  wireCalibrateUi();
+  wireEasterEgg();
+  calBackdrop?.addEventListener("click", closeCalPanel);
+  document.getElementById("smartsheetPreviewToggle")?.addEventListener("change", e => {
+    setSmartsheetPreview(e.target.checked);
+  });
+  initDashboard();
+  showWelcomeIfNeeded();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootDonna);
+} else {
+  bootDonna();
+}

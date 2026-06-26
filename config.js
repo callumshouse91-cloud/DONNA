@@ -3,13 +3,38 @@
    ============================================================ */
 
 const STORAGE_KEY = "donna-config-v1";
+const CONFIG_VERSION = typeof DEFAULT_CONFIG !== "undefined" ? DEFAULT_CONFIG.configVersion : 2;
 
 let CONFIG = deepClone(DEFAULT_CONFIG);
 let _onboardingDismissed = false;
 let _onConfigChange = null;
+let _configReady = false;
 
 function deepClone(o) {
   return JSON.parse(JSON.stringify(o));
+}
+
+function isValidRuntimeConfig(cfg) {
+  if (!cfg || typeof cfg !== "object") return false;
+  if (!Array.isArray(cfg.MODULES) || cfg.MODULES.length === 0) return false;
+  if (!cfg.MODULES.some(m => m && m.enabled !== false && m.id)) return false;
+  if (!Array.isArray(cfg.INPUTS) || cfg.INPUTS.length === 0) return false;
+  if (!cfg.CALIBRATION || typeof cfg.CALIBRATION !== "object") return false;
+  if (!cfg.LAYOUT || typeof cfg.LAYOUT !== "object") return false;
+  const layout = cfg.LAYOUT.baseline || cfg.LAYOUT.excel || cfg.LAYOUT.smartsheet;
+  if (!layout || !layout.kpi || !Array.isArray(layout.kpi.cards)) return false;
+  return true;
+}
+
+function resetConfigToDefault(opts = {}) {
+  const { persist = true, notify = false, keepOnboarding = false } = opts;
+  const keepDismissed = keepOnboarding && _onboardingDismissed;
+  CONFIG = deepClone(DEFAULT_CONFIG);
+  migrateConfig();
+  if (!keepDismissed) _onboardingDismissed = false;
+  SMARTSHEET_PREVIEW = false;
+  if (persist) savePersistedConfig();
+  if (notify && _configReady) notifyConfigChange();
 }
 
 function deepMerge(base, patch) {
@@ -26,6 +51,7 @@ function deepMerge(base, patch) {
 }
 
 function migrateConfig() {
+  if (CONFIG.configVersion !== CONFIG_VERSION) CONFIG.configVersion = CONFIG_VERSION;
   DEFAULT_CONFIG.MODULES.forEach(def => {
     const mod = CONFIG.MODULES.find(m => m.id === def.id);
     if (mod && !mod.sources) mod.sources = deepClone(def.sources);
@@ -34,32 +60,73 @@ function migrateConfig() {
     CONFIG.LAYOUT.baseline = CONFIG.LAYOUT.excel;
     delete CONFIG.LAYOUT.excel;
   }
-  if (!CONFIG.CONNECTIONS.systems && DEFAULT_CONFIG.CONNECTIONS.systems) {
+  if (!CONFIG.CONNECTIONS?.systems && DEFAULT_CONFIG.CONNECTIONS?.systems) {
     CONFIG.CONNECTIONS = deepMerge(deepClone(DEFAULT_CONFIG.CONNECTIONS), CONFIG.CONNECTIONS || {});
+  }
+  if (!CONFIG.CARDS?.overview?.length && DEFAULT_CONFIG.CARDS?.overview?.length) {
+    CONFIG.CARDS = deepMerge(deepClone(DEFAULT_CONFIG.CARDS), CONFIG.CARDS || {});
   }
 }
 
+function ensureValidConfig() {
+  if (!isValidRuntimeConfig(CONFIG)) {
+    resetConfigToDefault({ persist: true, notify: false, keepOnboarding: true });
+    return false;
+  }
+  return true;
+}
+
 function loadPersistedConfig() {
+  let saved = null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    if (saved && saved.config && typeof saved.config === "object") {
+    if (!raw) {
+      resetConfigToDefault({ persist: false, notify: false });
+      return;
+    }
+    saved = JSON.parse(raw);
+  } catch (_) {
+    resetConfigToDefault({ persist: true, notify: false });
+    return;
+  }
+
+  const storedVersion = saved.configVersion;
+  if (storedVersion !== CONFIG_VERSION) {
+    const keepOnboarding = !!saved.onboardingDismissed;
+    resetConfigToDefault({ persist: false, notify: false });
+    if (keepOnboarding) _onboardingDismissed = true;
+    savePersistedConfig();
+    return;
+  }
+
+  try {
+    if (saved.config && typeof saved.config === "object") {
       CONFIG = deepMerge(deepClone(DEFAULT_CONFIG), saved.config);
       migrateConfig();
+    } else {
+      resetConfigToDefault({ persist: false, notify: false });
     }
+
+    if (!isValidRuntimeConfig(CONFIG)) {
+      const keepOnboarding = !!saved.onboardingDismissed;
+      resetConfigToDefault({ persist: false, notify: false });
+      if (keepOnboarding) _onboardingDismissed = true;
+      savePersistedConfig();
+      return;
+    }
+
     if (saved.smartsheetPreview === true) SMARTSHEET_PREVIEW = true;
     else if (saved.activeSource === "smartsheet") SMARTSHEET_PREVIEW = true;
     if (saved.onboardingDismissed) _onboardingDismissed = true;
   } catch (_) {
-    CONFIG = deepClone(DEFAULT_CONFIG);
+    resetConfigToDefault({ persist: true, notify: false });
   }
 }
 
 function savePersistedConfig() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      version: 1,
+      configVersion: CONFIG_VERSION,
       config: CONFIG,
       smartsheetPreview: SMARTSHEET_PREVIEW,
       onboardingDismissed: _onboardingDismissed,
@@ -69,8 +136,10 @@ function savePersistedConfig() {
 }
 
 function resetToDefaultConfig() {
-  CONFIG = deepClone(DEFAULT_CONFIG);
+  _onboardingDismissed = false;
   SMARTSHEET_PREVIEW = false;
+  CONFIG = deepClone(DEFAULT_CONFIG);
+  migrateConfig();
   try { localStorage.removeItem(STORAGE_KEY); } catch (_) {}
   savePersistedConfig();
   notifyConfigChange();
@@ -78,7 +147,7 @@ function resetToDefaultConfig() {
 
 function exportConfigFile() {
   const blob = new Blob([JSON.stringify({
-    version: 1,
+    configVersion: CONFIG_VERSION,
     exportedAt: new Date().toISOString(),
     smartsheetPreview: SMARTSHEET_PREVIEW,
     config: CONFIG,
@@ -95,7 +164,7 @@ function validateImportedConfig(data) {
   const c = data.config || data;
   if (!Array.isArray(c.MODULES) || !Array.isArray(c.INPUTS)) return false;
   if (!c.CALIBRATION || !c.LAYOUT) return false;
-  return true;
+  return isValidRuntimeConfig(c);
 }
 
 function importConfigFile(file, onDone) {
@@ -108,6 +177,11 @@ function importConfigFile(file, onDone) {
         return;
       }
       CONFIG = deepMerge(deepClone(DEFAULT_CONFIG), data.config || data);
+      migrateConfig();
+      if (!isValidRuntimeConfig(CONFIG)) {
+        onDone(false, "Invalid configuration file — no enabled modules or missing sections.");
+        return;
+      }
       if (data.smartsheetPreview === true) SMARTSHEET_PREVIEW = true;
       else if (data.activeSource === "smartsheet") SMARTSHEET_PREVIEW = true;
       else if (data.smartsheetPreview === false) SMARTSHEET_PREVIEW = false;
@@ -270,7 +344,10 @@ function getActiveModules() {
 
 function getSourceLayout() {
   const key = isSmartsheetPreview() ? "smartsheet" : "baseline";
-  return CONFIG.LAYOUT[key] || CONFIG.LAYOUT.baseline;
+  return CONFIG.LAYOUT?.[key]
+    || CONFIG.LAYOUT?.baseline
+    || CONFIG.LAYOUT?.excel
+    || DEFAULT_CONFIG.LAYOUT.baseline;
 }
 
 function getInputFieldName(entry) {
@@ -285,3 +362,5 @@ function notifyConfigChange() {
 }
 
 loadPersistedConfig();
+ensureValidConfig();
+_configReady = true;
